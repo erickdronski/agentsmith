@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentsmith"
+name = "agentsmith-md"
 version = "0.1.0"
 description = "Mine a repository's actual conventions into an AGENTS.md, with evidence for every rule. No LLM, no network, no config."
 readme = "README.md"

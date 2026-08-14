@@ -34,11 +34,16 @@ that produced it.
 ## Try it
 
 ```bash
-pip install agentsmith
+pip install git+https://github.com/erickdronski/agentsmith
 agentsmith                    # print to stdout
 agentsmith --out AGENTS.md    # write the file
 agentsmith --explain          # include the evidence for every rule
 ```
+
+Installing from git is the supported path today — this is not on PyPI yet, and
+the obvious name there belongs to an unrelated project, so `pip install agentsmith`
+would get you someone else's package. When it is published the distribution
+name will be `agentsmith-md`.
 
 No API key. No config file. It runs offline in about a second on a large
 repository, and it never writes anything you did not ask for.
@@ -119,7 +124,7 @@ Checked AGENTS.md against the repository.
 Exit code is 1 on contradictions, so it drops straight into CI:
 
 ```yaml
-- run: pip install agentsmith
+- run: pip install git+https://github.com/erickdronski/agentsmith
 - run: agentsmith --check
 ```
 
