@@ -222,6 +222,17 @@ histories — testing them against mocks would test the mocks. Roughly half the
 suite asserts that a detector finds *nothing*, because restraint is the property
 that makes the output trustworthy.
 
+## Related
+
+Part of a set of small, standalone tools for working with coding agents:
+
+| Tool | Job |
+|---|---|
+| [contexttest](https://github.com/erickdronski/contexttest) | A/B tests whether an AGENTS.md change actually helps |
+| [burnrate](https://github.com/erickdronski/burnrate) | Prices what your agent sessions cost, with a hard spend cap |
+| [tripwire](https://github.com/erickdronski/tripwire) | Audits what your agent is allowed to do |
+| [gtm-skills](https://github.com/erickdronski/gtm-skills) | Go-to-market skills for agents, on a tested arithmetic engine |
+
 ## License
 
 MIT.
