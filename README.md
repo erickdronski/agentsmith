@@ -17,7 +17,7 @@ No LLM. No network. No config. Evidence for every rule.</p>
   <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-174ea6">
   <img alt="Linux macOS Windows" src="https://img.shields.io/badge/tested_on-Linux%20%7C%20macOS%20%7C%20Windows-0f766e">
   <img alt="ruff" src="https://img.shields.io/badge/lint-ruff-d97706">
-  <img alt="86 tests" src="https://img.shields.io/badge/tests-89-6b21a8">
+  <img alt="86 tests" src="https://img.shields.io/badge/tests-111-6b21a8">
 </p>
 
 ---
@@ -40,6 +40,7 @@ pip install git+https://github.com/erickdronski/agentsmith
 agentsmith                    # print to stdout
 agentsmith --out AGENTS.md    # write the file
 agentsmith --explain          # include the evidence for every rule
+agentsmith --out AGENTS.md --merge   # keep your hand-written sections
 ```
 
 Installing from git is the supported path today — this is not on PyPI yet, and
@@ -189,6 +190,43 @@ So:
 - **It will not silently overwrite a hand-written file.** If `AGENTS.md` exists
   without the generated marker, you get a warning naming what is being replaced.
 
+## Keep your own writing: `--merge`
+
+The thing that stopped this being adoptable: a team with an existing
+`AGENTS.md` full of hard-won architectural knowledge had two options — overwrite
+it, or don't use the tool. Everyone picked the second.
+
+```bash
+agentsmith --out AGENTS.md --merge
+```
+
+Generated rules go inside a marked block. **Everything outside it is never
+touched**, on any run, forever:
+
+```markdown
+## Architecture
+The billing pipeline is eventually consistent. Never assume a write is
+readable in the same request.            <- yours, permanently
+
+<!-- agentsmith:begin -->
+## Commands
+- Use `pnpm` for all dependency operations.   <- regenerated each run
+<!-- agentsmith:end -->
+
+## Review notes
+Ping @alice on anything touching auth.  <- yours, permanently
+```
+
+The split is the point. Mechanical facts — package manager, test layout, CI
+commands, generated paths — go stale constantly and are exactly what this tool
+derives. Architectural knowledge is what no tool can see, and what is worth
+protecting.
+
+A file with no markers keeps all its content and gains the block at the end.
+Merging is idempotent, so it is safe on a schedule or in a pre-commit hook. Use
+`--dry-run` to see what would change first. If the markers are ever malformed,
+it **refuses and writes nothing** rather than guessing which text is yours.
+
 ## Use it as a starting point, not an oracle
 
 The generated file is a floor, not a ceiling. It captures what is mechanically
@@ -221,7 +259,7 @@ own tooling on top.
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -t .   # 89 tests
+python -m unittest discover -s tests -t .   # 111 tests
 ```
 
 Detectors are tested against real repositories built on disk, including real git

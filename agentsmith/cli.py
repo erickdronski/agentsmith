@@ -30,6 +30,7 @@ from .detectors import DETECTORS, run_all
 from .drift import AGENT_FILES
 from .drift import check as check_drift
 from .evidence import Confidence, sort_findings
+from .merge import MergeError, merge, preview
 from .render import GENERATED_MARKER, render_json, render_markdown
 from .repo import Repo, RepoError
 
@@ -65,6 +66,19 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("markdown", "json"),
         default="markdown",
         help="output format (default: markdown)",
+    )
+    parser.add_argument(
+        "--merge",
+        action="store_true",
+        help=(
+            "update only the managed block in --out, preserving every "
+            "hand-written line outside it (creates the block on first run)"
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="with --merge, describe what would change without writing",
     )
     parser.add_argument(
         "--explain",
@@ -143,6 +157,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         target = (
             args.out if os.path.isabs(args.out) else os.path.join(os.getcwd(), args.out)
         )
+        if args.merge:
+            # The non-destructive path: only the managed block is rewritten, so
+            # there is nothing to warn about.
+            return _write_merged(target, output, args, findings)
         _warn_on_overwrite(target)
         with open(target, "w", encoding="utf-8") as handle:
             handle.write(output.rstrip("\n") + "\n")
@@ -159,6 +177,43 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "new, or genuinely inconsistent repositories are better served by "
             "a hand-written file.\n"
         )
+    return 0
+
+
+def _write_merged(target: str, output: str, args, findings) -> int:
+    """Update only the managed block, preserving everything a human wrote."""
+    existing = ""
+    if os.path.exists(target):
+        try:
+            with open(target, encoding="utf-8") as handle:
+                existing = handle.read()
+        except OSError as exc:
+            sys.stderr.write("error: could not read %s (%s)\n" % (target, exc))
+            return 2
+
+    try:
+        if args.dry_run:
+            sys.stderr.write("%s: %s\n" % (args.out, preview(existing, output)))
+            return 0
+        merged = merge(existing, output)
+    except MergeError as exc:
+        sys.stderr.write("error: %s\n" % exc)
+        return 2
+
+    with open(target, "w", encoding="utf-8") as handle:
+        handle.write(merged.rstrip("\n") + "\n")
+
+    preserved = (
+        len([ln for ln in existing.splitlines() if ln.strip()]) if existing else 0
+    )
+    sys.stderr.write(
+        "merged into %s — %d rule(s) in the managed block%s\n"
+        % (
+            args.out,
+            len(findings),
+            "; %d existing line(s) preserved" % preserved if preserved else "",
+        )
+    )
     return 0
 
 
