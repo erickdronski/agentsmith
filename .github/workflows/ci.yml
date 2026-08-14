@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: tests (python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Confirm there are no dependencies
+        run: test ! -f requirements.txt || (echo "agentsmith must stay dependency-free" && exit 1)
+      - name: Configure git for fixture repositories
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+          git config --global init.defaultBranch main
+      - name: Run the test suite
+        run: python -m unittest discover -s tests -t . -v
+
+  dogfood:
+    name: agentsmith on itself
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate
+        run: python -m agentsmith . --explain
+      - name: Check our own AGENTS.md for drift
+        run: python -m agentsmith . --check
+      - name: JSON output is valid
+        run: python -m agentsmith . --format json | python -c "import json,sys; json.load(sys.stdin)"
+
+  install:
+    name: installs cleanly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - run: agentsmith --version
+      - run: agentsmith . --format json > /dev/null

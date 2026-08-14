@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentsmith"
+version = "0.1.0"
+description = "Mine a repository's actual conventions into an AGENTS.md, with evidence for every rule. No LLM, no network, no config."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "Erick Dronski" }]
+keywords = ["agents-md", "claude-code", "codex", "cursor", "ai-agents", "conventions", "developer-tools", "linter"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/erickdronski/agentsmith"
+Issues = "https://github.com/erickdronski/agentsmith/issues"
+
+[project.scripts]
+agentsmith = "agentsmith.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agentsmith*"]
