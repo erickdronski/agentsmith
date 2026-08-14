@@ -19,9 +19,8 @@ from agentsmith.merge import (
     split_managed,
 )
 
-from .test_cli import run_cli
 from .fixtures import FixtureRepo
-
+from .test_cli import run_cli
 
 HANDWRITTEN = """# AGENTS.md
 
