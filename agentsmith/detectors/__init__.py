@@ -18,7 +18,7 @@ from ..evidence import Finding
 from ..repo import Repo
 from . import history, layout, packaging, style, testing, verification
 
-__all__ = ["DETECTORS", "run_all", "SECTION_ORDER"]
+__all__ = ["DETECTORS", "SECTION_ORDER", "run_all"]
 
 DETECTORS: Tuple[Tuple[str, Callable[[Repo], List[Finding]]], ...] = (
     ("packaging", packaging.detect),
@@ -56,7 +56,7 @@ def run_all(repo: Repo, skip: Sequence[str] = ()) -> List[Finding]:
             continue
         try:
             findings.extend(detector(repo) or [])
-        except Exception as exc:  # noqa: BLE001 - deliberate isolation
+        except Exception as exc:
             findings.append(
                 Finding(
                     key="detector-error-%s" % name,

@@ -7,7 +7,6 @@ build at the right moment and not at the wrong one.
 import io
 import json
 import os
-import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
@@ -16,7 +15,7 @@ from agentsmith.detectors import run_all
 from agentsmith.evidence import Confidence, Evidence, Finding
 from agentsmith.render import GENERATED_MARKER, render_json, render_markdown
 
-from .fixtures import TS_SOURCE, FixtureRepo
+from .fixtures import FixtureRepo
 
 
 def run_cli(*args):
@@ -27,8 +26,13 @@ def run_cli(*args):
     return code, out.getvalue(), err.getvalue()
 
 
-def finding(key="k", section="Commands", rule="Do the thing.",
-            confidence=Confidence.CERTAIN, evidence=None):
+def finding(
+    key="k",
+    section="Commands",
+    rule="Do the thing.",
+    confidence=Confidence.CERTAIN,
+    evidence=None,
+):
     return Finding(
         key=key,
         section=section,
@@ -76,8 +80,12 @@ class TestRender(unittest.TestCase):
     def test_min_confidence_filters(self):
         findings = [
             finding(key="strong", confidence=Confidence.CERTAIN),
-            finding(key="weak", rule="Maybe.", confidence=Confidence.WEAK,
-                    evidence=[Evidence("src", "d", observed=13, total=20)]),
+            finding(
+                key="weak",
+                rule="Maybe.",
+                confidence=Confidence.WEAK,
+                evidence=[Evidence("src", "d", observed=13, total=20)],
+            ),
         ]
         output = render_markdown(findings, "repo", min_confidence=Confidence.STRONG)
         self.assertIn("Do the thing.", output)
@@ -100,9 +108,7 @@ class TestRender(unittest.TestCase):
         self.assertNotIn("## Commands", output)
 
     def test_notes_are_rendered(self):
-        output = render_markdown(
-            [finding(confidence=Confidence.LIKELY)], "repo"
-        )
+        output = render_markdown([finding(confidence=Confidence.LIKELY)], "repo")
         self.assertIn("Do the thing.", output)
 
     def test_json_shape(self):
@@ -239,7 +245,7 @@ class TestCheckExitCodes(unittest.TestCase):
             fixture.write_json("package.json", {"name": "x"})
             fixture.write("pnpm-lock.yaml", "")
             fixture.write("AGENTS.md", "Run `npm install`.")
-            code, out, _ = run_cli(fixture.root, "--check", "--format", "json")
+            _code, out, _ = run_cli(fixture.root, "--check", "--format", "json")
             payload = json.loads(out)
             self.assertEqual(payload["file"], "AGENTS.md")
             self.assertGreaterEqual(payload["errors"], 1)

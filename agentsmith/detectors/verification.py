@@ -10,9 +10,8 @@ So this detector reads the workflow files and extracts the real commands.
 
 from __future__ import annotations
 
-import os
 import re
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from ..evidence import Confidence, Evidence, Finding
 from ..repo import Repo
@@ -62,8 +61,7 @@ def _workflow_files(repo: Repo) -> List[str]:
     return [
         path
         for path in repo.files()
-        if path.startswith(".github/workflows/")
-        and path.endswith((".yml", ".yaml"))
+        if path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml"))
     ]
 
 
@@ -101,8 +99,7 @@ def _ci_commands(repo: Repo) -> Optional[Finding]:
     listed = "\n".join("- `%s`" % command for command in commands[:12])
     matrix = _python_matrix(repo, workflows)
     rule = (
-        "CI runs these commands. Work is not done until they pass locally:\n\n"
-        + listed
+        "CI runs these commands. Work is not done until they pass locally:\n\n" + listed
     )
     if matrix:
         rule += "\n\n" + matrix
@@ -127,9 +124,7 @@ def _python_matrix(repo: Repo, workflows: List[str]) -> Optional[str]:
     versions = set()
     for path in workflows:
         text = repo.read(path) or ""
-        for match in re.finditer(
-            r"python-version:\s*\[([^\]]+)\]", text
-        ):
+        for match in re.finditer(r"python-version:\s*\[([^\]]+)\]", text):
             for part in match.group(1).split(","):
                 cleaned = part.strip().strip("\"'")
                 if re.match(r"^\d+\.\d+$", cleaned):
@@ -209,9 +204,7 @@ def _hooks(repo: Repo) -> Optional[Finding]:
             and INTERESTING_RE.search(line)
         ][:4]
         found.append(label)
-        details.append(
-            Evidence(path, label, samples=commands or None)
-        )
+        details.append(Evidence(path, label, samples=commands or None))
 
     package = repo.read_json("package.json") or {}
     if "lint-staged" in package:

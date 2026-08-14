@@ -9,7 +9,6 @@ layouts and the team has settled on one.
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Dict, List, Optional
 
@@ -20,7 +19,10 @@ SECTION = "Tests"
 
 FRAMEWORK_MARKERS = (
     ("vitest", ("vitest.config.ts", "vitest.config.js", "vitest.config.mts")),
-    ("jest", ("jest.config.js", "jest.config.ts", "jest.config.mjs", "jest.config.json")),
+    (
+        "jest",
+        ("jest.config.js", "jest.config.ts", "jest.config.mjs", "jest.config.json"),
+    ),
     ("playwright", ("playwright.config.ts", "playwright.config.js")),
     ("cypress", ("cypress.config.ts", "cypress.config.js")),
     ("pytest", ("pytest.ini", "conftest.py")),
@@ -37,8 +39,20 @@ TEST_FILE_RE = re.compile(
 )
 
 SOURCE_EXTENSIONS = (
-    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rb",
-    ".rs", ".java", ".kt", ".swift", ".php",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".py",
+    ".go",
+    ".rb",
+    ".rs",
+    ".java",
+    ".kt",
+    ".swift",
+    ".php",
 )
 
 
@@ -66,8 +80,7 @@ def detect(repo: Repo) -> List[Finding]:
                     evidence=[
                         Evidence(
                             "file scan",
-                            "%d file(s) matched a test-file pattern"
-                            % len(test_files),
+                            "%d file(s) matched a test-file pattern" % len(test_files),
                         )
                     ],
                 )
@@ -247,7 +260,8 @@ def _assertion_style(repo: Repo, test_files: List[str]) -> Optional[Finding]:
 
     describe = sum(1 for _, t in samples if re.search(r"\bdescribe\s*\(", t))
     bare_test = sum(
-        1 for _, t in samples
+        1
+        for _, t in samples
         if re.search(r"^\s*(test|it)\s*\(", t, re.M)
         and not re.search(r"\bdescribe\s*\(", t)
     )

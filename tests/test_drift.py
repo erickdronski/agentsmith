@@ -62,7 +62,7 @@ class TestPackageManagerContradictions(unittest.TestCase):
             self.assertEqual(kinds(run_check(fixture), "contradiction"), [])
 
     def test_bare_word_yarn_is_not_enough_to_flag(self):
-        """"yarn" appears in prose constantly. Require a real subcommand."""
+        """ "yarn" appears in prose constantly. Require a real subcommand."""
         with FixtureRepo() as fixture:
             fixture.write_json("package.json", {"name": "x"})
             fixture.write("pnpm-lock.yaml", "")
@@ -86,7 +86,8 @@ class TestStaleScripts(unittest.TestCase):
             )
             fixture.write("AGENTS.md", "Run `npm run verify` before pushing.")
             errors = [
-                d for d in run_check(fixture)["drift"]
+                d
+                for d in run_check(fixture)["drift"]
                 if d["kind"] == "stale" and d["severity"] == "error"
             ]
             self.assertTrue(errors)
@@ -99,7 +100,11 @@ class TestStaleScripts(unittest.TestCase):
             )
             fixture.write("AGENTS.md", "Run `npm run test`.")
             self.assertFalse(
-                [d for d in run_check(fixture)["drift"] if "no such script" in d["message"]]
+                [
+                    d
+                    for d in run_check(fixture)["drift"]
+                    if "no such script" in d["message"]
+                ]
             )
 
 
@@ -108,7 +113,9 @@ class TestStalePaths(unittest.TestCase):
         with FixtureRepo() as fixture:
             fixture.write("src/index.ts", TS_SOURCE)
             fixture.write("AGENTS.md", "Entry point is `src/main.ts`.")
-            stale = [d for d in run_check(fixture)["drift"] if "src/main.ts" in d["message"]]
+            stale = [
+                d for d in run_check(fixture)["drift"] if "src/main.ts" in d["message"]
+            ]
             self.assertTrue(stale)
 
     def test_existing_path_is_not_reported(self):

@@ -9,7 +9,7 @@ branch.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from ..evidence import Confidence, Evidence, Finding
 from ..repo import Repo
@@ -35,8 +35,17 @@ PYTHON_LOCKFILES = (
 
 #: Scripts worth surfacing, in the order an agent needs them.
 INTERESTING_SCRIPTS = (
-    "dev", "start", "build", "test", "lint", "typecheck", "type-check",
-    "format", "check", "e2e", "migrate",
+    "dev",
+    "start",
+    "build",
+    "test",
+    "lint",
+    "typecheck",
+    "type-check",
+    "format",
+    "check",
+    "e2e",
+    "migrate",
 )
 
 
@@ -72,12 +81,15 @@ def _javascript(repo: Repo) -> List[Finding]:
                     "This repository contains more than one lockfile (%s). "
                     "Confirm which package manager is authoritative before "
                     "installing anything — using the wrong one produces a "
-                    "divergent dependency tree that will not fail loudly."
-                    % names
+                    "divergent dependency tree that will not fail loudly." % names
                 ),
                 confidence=Confidence.CERTAIN,
                 evidence=[
-                    Evidence("lockfiles", "Multiple lockfiles present", samples=[n for n, _ in found])
+                    Evidence(
+                        "lockfiles",
+                        "Multiple lockfiles present",
+                        samples=[n for n, _ in found],
+                    )
                 ],
             )
         )
@@ -88,8 +100,7 @@ def _javascript(repo: Repo) -> List[Finding]:
         if declared and declared != manager:
             rule += (
                 " Note that package.json declares `packageManager: %s`, which "
-                "disagrees with the lockfile — resolve this before installing."
-                % raw_pm
+                "disagrees with the lockfile — resolve this before installing." % raw_pm
             )
             evidence.append(
                 Evidence("package.json", "packageManager field says %r" % raw_pm)
@@ -151,8 +162,10 @@ def _javascript(repo: Repo) -> List[Finding]:
     workspaces = package.get("workspaces")
     if workspaces:
         globs = (
-            workspaces if isinstance(workspaces, list)
-            else workspaces.get("packages", []) if isinstance(workspaces, dict)
+            workspaces
+            if isinstance(workspaces, list)
+            else workspaces.get("packages", [])
+            if isinstance(workspaces, dict)
             else []
         )
         findings.append(
@@ -184,9 +197,7 @@ def _javascript(repo: Repo) -> List[Finding]:
                 section="Stack",
                 rule="Built with %s." % _join(stack),
                 confidence=Confidence.CERTAIN,
-                evidence=[
-                    Evidence("package.json", "dependencies", samples=stack)
-                ],
+                evidence=[Evidence("package.json", "dependencies", samples=stack)],
             )
         )
 

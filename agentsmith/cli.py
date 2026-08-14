@@ -27,7 +27,8 @@ from typing import List, Optional, Sequence
 
 from . import __version__
 from .detectors import DETECTORS, run_all
-from .drift import AGENT_FILES, check as check_drift
+from .drift import AGENT_FILES
+from .drift import check as check_drift
 from .evidence import Confidence, sort_findings
 from .render import GENERATED_MARKER, render_json, render_markdown
 from .repo import Repo, RepoError
@@ -89,9 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--min-confidence",
         choices=Confidence.ORDER,
         default=Confidence.WEAK,
-        help=(
-            "drop rules weaker than this (default: weak, i.e. keep everything)"
-        ),
+        help=("drop rules weaker than this (default: weak, i.e. keep everything)"),
     )
     parser.add_argument(
         "--skip",
@@ -141,8 +140,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
 
     if args.out:
-        target = args.out if os.path.isabs(args.out) else os.path.join(
-            os.getcwd(), args.out
+        target = (
+            args.out if os.path.isabs(args.out) else os.path.join(os.getcwd(), args.out)
         )
         _warn_on_overwrite(target)
         with open(target, "w", encoding="utf-8") as handle:
@@ -214,17 +213,14 @@ def _format_check(result: dict) -> str:
     lines.append("Checked %s against the repository.\n" % target)
 
     for item in drift:
-        lines.append(
-            "%s %s" % (symbols.get(item["severity"], "·"), item["message"])
-        )
+        lines.append("%s %s" % (symbols.get(item["severity"], "·"), item["message"]))
         if item.get("suggestion"):
             lines.append("    → %s" % item["suggestion"])
     lines.append("")
 
     lines.append(
         "%d contradiction(s), %d stale reference(s), %d undocumented "
-        "convention(s)."
-        % (result["errors"], result["warnings"], result["infos"])
+        "convention(s)." % (result["errors"], result["warnings"], result["infos"])
     )
     if result["errors"]:
         lines.append(

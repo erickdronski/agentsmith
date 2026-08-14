@@ -77,7 +77,8 @@ def _commit_convention(subjects: List[str]) -> Optional[Finding]:
 
         rule = (
             "Commits follow Conventional Commits (`type: subject`). Types in "
-            "use: %s." % ", ".join(
+            "use: %s."
+            % ", ".join(
                 "`%s`" % name
                 for name, _ in sorted(types.items(), key=lambda i: -i[1])[:8]
             )
@@ -155,14 +156,22 @@ def _subject_style(subjects: List[str]) -> Optional[Finding]:
         match = CONVENTIONAL_RE.match(subject)
         bodies.append(subject.split(": ", 1)[1] if match else subject)
 
-    past = sum(1 for b in bodies if re.match(r"^(Added|Fixed|Updated|Removed|Changed|Made)\b", b))
-    imperative = sum(1 for b in bodies if re.match(r"^(Add|Fix|Update|Remove|Change|Make|Bump|Refactor)\b", b))
+    past = sum(
+        1
+        for b in bodies
+        if re.match(r"^(Added|Fixed|Updated|Removed|Changed|Made)\b", b)
+    )
+    imperative = sum(
+        1
+        for b in bodies
+        if re.match(r"^(Add|Fix|Update|Remove|Change|Make|Bump|Refactor)\b", b)
+    )
 
     counts = {}
     if imperative:
-        counts["written in the imperative mood (\"Add X\", not \"Added X\")"] = imperative
+        counts['written in the imperative mood ("Add X", not "Added X")'] = imperative
     if past:
-        counts["written in the past tense (\"Added X\")"] = past
+        counts['written in the past tense ("Added X")'] = past
 
     result = dominant(counts, min_sample=8)
     if not result:

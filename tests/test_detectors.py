@@ -8,7 +8,15 @@ convention — it is confidently inventing one from four files.
 
 import unittest
 
-from agentsmith.detectors import history, layout, packaging, run_all, style, testing, verification
+from agentsmith.detectors import (
+    history,
+    layout,
+    packaging,
+    run_all,
+    style,
+    testing,
+    verification,
+)
 from agentsmith.evidence import Confidence, dominant
 
 from .fixtures import PY_SOURCE, TS_SOURCE, TS_SOURCE_NO_SEMI, FixtureRepo, keys
@@ -114,8 +122,13 @@ class TestTesting(unittest.TestCase):
     def test_location_and_naming_are_derived_from_the_corpus(self):
         with FixtureRepo() as fixture:
             fixture.write_many(
-                ["tests/test_a.py", "tests/test_b.py", "tests/test_c.py",
-                 "tests/test_d.py", "tests/test_e.py"],
+                [
+                    "tests/test_a.py",
+                    "tests/test_b.py",
+                    "tests/test_c.py",
+                    "tests/test_d.py",
+                    "tests/test_e.py",
+                ],
                 PY_SOURCE,
             )
             found = keys(testing.detect(fixture.repo()))
@@ -125,8 +138,13 @@ class TestTesting(unittest.TestCase):
     def test_colocated_tests_are_recognized(self):
         with FixtureRepo() as fixture:
             fixture.write_many(
-                ["src/a.test.ts", "src/b.test.ts", "src/c.test.ts",
-                 "src/d.test.ts", "src/e.test.ts"],
+                [
+                    "src/a.test.ts",
+                    "src/b.test.ts",
+                    "src/c.test.ts",
+                    "src/d.test.ts",
+                    "src/e.test.ts",
+                ],
                 TS_SOURCE,
             )
             found = keys(testing.detect(fixture.repo()))
@@ -134,9 +152,7 @@ class TestTesting(unittest.TestCase):
 
     def test_absent_suite_is_reported_only_for_code_repos(self):
         with FixtureRepo() as fixture:
-            fixture.write_many(
-                ["src/%d.ts" % i for i in range(12)], TS_SOURCE
-            )
+            fixture.write_many(["src/%d.ts" % i for i in range(12)], TS_SOURCE)
             found = keys(testing.detect(fixture.repo()))
             self.assertIn("tests-absent", found)
 
@@ -149,27 +165,21 @@ class TestTesting(unittest.TestCase):
 class TestStyle(unittest.TestCase):
     def test_semicolon_and_quote_conventions_from_source(self):
         with FixtureRepo() as fixture:
-            fixture.write_many(
-                ["src/%d.ts" % i for i in range(12)], TS_SOURCE
-            )
+            fixture.write_many(["src/%d.ts" % i for i in range(12)], TS_SOURCE)
             found = keys(style.detect(fixture.repo()))
             self.assertIn("end with semicolons", found["js-semicolons"].rule)
             self.assertIn("single quotes", found["js-quotes"].rule)
 
     def test_semicolon_free_codebase_is_detected(self):
         with FixtureRepo() as fixture:
-            fixture.write_many(
-                ["src/%d.ts" % i for i in range(12)], TS_SOURCE_NO_SEMI
-            )
+            fixture.write_many(["src/%d.ts" % i for i in range(12)], TS_SOURCE_NO_SEMI)
             found = keys(style.detect(fixture.repo()))
             self.assertIn("omit semicolons", found["js-semicolons"].rule)
 
     def test_prettier_config_conflicting_with_code_is_reported(self):
         """The most useful thing this detector can find."""
         with FixtureRepo() as fixture:
-            fixture.write_many(
-                ["src/%d.ts" % i for i in range(12)], TS_SOURCE_NO_SEMI
-            )
+            fixture.write_many(["src/%d.ts" % i for i in range(12)], TS_SOURCE_NO_SEMI)
             fixture.write_json(".prettierrc", {"semi": True})
             found = keys(style.detect(fixture.repo()))
             self.assertIn("does not match", found["prettier"].rule)
@@ -196,9 +206,7 @@ class TestStyle(unittest.TestCase):
 
     def test_editorconfig_is_authoritative(self):
         with FixtureRepo() as fixture:
-            fixture.write(
-                ".editorconfig", "[*]\nindent_style = tab\nindent_size = 4\n"
-            )
+            fixture.write(".editorconfig", "[*]\nindent_style = tab\nindent_size = 4\n")
             found = keys(style.detect(fixture.repo()))
             self.assertIn("indent_style = tab", found["editorconfig"].rule)
 
@@ -268,13 +276,15 @@ class TestLayout(unittest.TestCase):
     def test_naming_convention_per_directory(self):
         with FixtureRepo() as fixture:
             fixture.write_many(
-                ["src/components/ButtonPrimary.tsx",
-                 "src/components/CardHeader.tsx",
-                 "src/components/ModalDialog.tsx",
-                 "src/components/NavBar.tsx",
-                 "src/components/SidePanel.tsx",
-                 "src/components/UserAvatar.tsx",
-                 "src/components/FormField.tsx"],
+                [
+                    "src/components/ButtonPrimary.tsx",
+                    "src/components/CardHeader.tsx",
+                    "src/components/ModalDialog.tsx",
+                    "src/components/NavBar.tsx",
+                    "src/components/SidePanel.tsx",
+                    "src/components/UserAvatar.tsx",
+                    "src/components/FormField.tsx",
+                ],
                 TS_SOURCE,
             )
             found = keys(layout.detect(fixture.repo()))
@@ -305,9 +315,14 @@ class TestLayout(unittest.TestCase):
     def test_mixed_naming_produces_no_rule(self):
         with FixtureRepo() as fixture:
             fixture.write_many(
-                ["src/x/AlphaBeta.ts", "src/x/gamma-delta.ts",
-                 "src/x/epsilon_zeta.ts", "src/x/EtaTheta.ts",
-                 "src/x/iota-kappa.ts", "src/x/lambda_mu.ts"],
+                [
+                    "src/x/AlphaBeta.ts",
+                    "src/x/gamma-delta.ts",
+                    "src/x/epsilon_zeta.ts",
+                    "src/x/EtaTheta.ts",
+                    "src/x/iota-kappa.ts",
+                    "src/x/lambda_mu.ts",
+                ],
                 TS_SOURCE,
             )
             found = keys(layout.detect(fixture.repo()))
@@ -366,7 +381,7 @@ class TestDetectorIsolation(unittest.TestCase):
             raise ValueError("boom")
 
         original = registry.DETECTORS
-        registry.DETECTORS = (("boom", exploding),) + original
+        registry.DETECTORS = (("boom", exploding), *original)
         try:
             with FixtureRepo() as fixture:
                 fixture.write_json("package.json", {"name": "x"})

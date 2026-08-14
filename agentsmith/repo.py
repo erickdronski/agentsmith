@@ -34,12 +34,40 @@ class RepoError(RuntimeError):
 #: code or machine-generated, and both would poison the conventions.
 EXCLUDED_DIRS = frozenset(
     {
-        ".git", ".hg", ".svn", "node_modules", "vendor", "venv", ".venv",
-        "env", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-        "dist", "build", "out", "target", ".next", ".nuxt", ".svelte-kit",
-        "coverage", "htmlcov", ".tox", ".gradle", "Pods", "DerivedData",
-        ".terraform", "bower_components", "site-packages", ".cache",
-        ".idea", ".vscode", "__snapshots__", ".turbo", ".parcel-cache",
+        ".git",
+        ".hg",
+        ".svn",
+        "node_modules",
+        "vendor",
+        "venv",
+        ".venv",
+        "env",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+        "out",
+        "target",
+        ".next",
+        ".nuxt",
+        ".svelte-kit",
+        "coverage",
+        "htmlcov",
+        ".tox",
+        ".gradle",
+        "Pods",
+        "DerivedData",
+        ".terraform",
+        "bower_components",
+        "site-packages",
+        ".cache",
+        ".idea",
+        ".vscode",
+        "__snapshots__",
+        ".turbo",
+        ".parcel-cache",
     }
 )
 
@@ -186,7 +214,7 @@ class Repo:
             return None
         try:
             result = subprocess.run(
-                ("git", "-C", self.root) + args,
+                ("git", "-C", self.root, *args),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -207,17 +235,19 @@ class Repo:
         forge, not written by a human, and including them would make every
         repository look like it uses "Merge pull request #N" as a convention.
         """
-        output = self.git(
-            "log", "--no-merges", "--pretty=format:%s", "-n", str(limit)
-        )
+        output = self.git("log", "--no-merges", "--pretty=format:%s", "-n", str(limit))
         if not output:
             return []
         return [line.strip() for line in output.splitlines() if line.strip()]
 
     def branch_names(self, limit: int = 200) -> List[str]:
         output = self.git(
-            "for-each-ref", "--format=%(refname:short)", "--count", str(limit),
-            "refs/remotes", "refs/heads",
+            "for-each-ref",
+            "--format=%(refname:short)",
+            "--count",
+            str(limit),
+            "refs/remotes",
+            "refs/heads",
         )
         if not output:
             return []
@@ -227,7 +257,7 @@ class Repo:
             if not name:
                 continue
             if name.startswith("origin/"):
-                name = name[len("origin/"):]
+                name = name[len("origin/") :]
             if name in ("HEAD", "main", "master", "develop", "trunk"):
                 continue
             names.append(name)

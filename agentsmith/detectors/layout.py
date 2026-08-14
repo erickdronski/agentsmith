@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from ..evidence import Confidence, Evidence, Finding, dominant
 from ..repo import Repo
@@ -26,16 +26,34 @@ SECTION = "Layout"
 BOUNDARY_SECTION = "Do not edit"
 
 CODE_EXTENSIONS = (
-    ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rb", ".rs", ".java",
-    ".kt", ".swift", ".php", ".mjs", ".cjs",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".py",
+    ".go",
+    ".rb",
+    ".rs",
+    ".java",
+    ".kt",
+    ".swift",
+    ".php",
+    ".mjs",
+    ".cjs",
 )
 
 #: Directories whose contents are generated, vendored, or otherwise
 #: hand-edited only by mistake.
 BOUNDARY_MARKERS = (
-    ("migrations", "Applied migrations are immutable — add a new one instead of editing an existing file"),
+    (
+        "migrations",
+        "Applied migrations are immutable — add a new one instead of editing an existing file",
+    ),
     ("supabase/migrations", "Applied migrations are immutable — add a new migration"),
-    ("prisma/migrations", "Applied migrations are immutable — change the schema and generate a new migration"),
+    (
+        "prisma/migrations",
+        "Applied migrations are immutable — change the schema and generate a new migration",
+    ),
     ("__generated__", "Generated output — change the generator or the schema instead"),
     ("generated", "Generated output — change the source of generation instead"),
     ("dist", "Build output"),
@@ -46,8 +64,15 @@ BOUNDARY_MARKERS = (
 )
 
 LOCKFILES = (
-    "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb",
-    "poetry.lock", "uv.lock", "Cargo.lock", "Gemfile.lock", "composer.lock",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lockb",
+    "poetry.lock",
+    "uv.lock",
+    "Cargo.lock",
+    "Gemfile.lock",
+    "composer.lock",
 )
 
 
@@ -79,9 +104,7 @@ def _top_level(repo: Repo) -> Optional[Finding]:
                 continue
             full = os.path.join(repo.root, name)
             if os.path.isdir(full):
-                count = sum(
-                    1 for p in repo.files() if p.startswith(name + "/")
-                )
+                count = sum(1 for p in repo.files() if p.startswith(name + "/"))
                 if count:
                     entries.append((name, count))
     except OSError:
@@ -183,15 +206,14 @@ def _naming_by_directory(repo: Repo) -> List[Finding]:
         )
 
     # Too many naming rules is noise. Keep the best-evidenced ones.
-    findings.sort(
-        key=lambda f: -(f.evidence[0].observed or 0)
-    )
+    findings.sort(key=lambda f: -(f.evidence[0].observed or 0))
     return findings[:6]
 
 
 def _import_style(repo: Repo) -> Optional[Finding]:
     ts_files = [
-        p for p in repo.files_matching((".ts", ".tsx", ".js", ".jsx"))
+        p
+        for p in repo.files_matching((".ts", ".tsx", ".js", ".jsx"))
         if ".test." not in p and ".spec." not in p
     ]
     if len(ts_files) < 8:
@@ -222,9 +244,11 @@ def _import_style(repo: Repo) -> Optional[Finding]:
         alias_names = sorted(paths.keys())[:5] if isinstance(paths, dict) else []
         rule = (
             "Cross-directory imports use path aliases%s rather than deep "
-            "relative paths." % (
+            "relative paths."
+            % (
                 " (%s)" % ", ".join("`%s`" % a for a in alias_names)
-                if alias_names else ""
+                if alias_names
+                else ""
             )
         )
         if relative_deep:
@@ -237,8 +261,10 @@ def _import_style(repo: Repo) -> Optional[Finding]:
             section=SECTION,
             rule=rule,
             confidence=(
-                Confidence.CERTAIN if paths
-                else Confidence.STRONG if aliased / total >= 0.7
+                Confidence.CERTAIN
+                if paths
+                else Confidence.STRONG
+                if aliased / total >= 0.7
                 else Confidence.LIKELY
             ),
             evidence=[

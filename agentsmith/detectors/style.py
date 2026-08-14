@@ -22,13 +22,28 @@ JS_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
 PY_EXTENSIONS = (".py",)
 
 PRETTIER_FILES = (
-    ".prettierrc", ".prettierrc.json", ".prettierrc.yml", ".prettierrc.yaml",
-    ".prettierrc.js", "prettier.config.js", ".prettierrc.cjs",
+    ".prettierrc",
+    ".prettierrc.json",
+    ".prettierrc.yml",
+    ".prettierrc.yaml",
+    ".prettierrc.js",
+    "prettier.config.js",
+    ".prettierrc.cjs",
 )
 
 LINT_CONFIGS = (
-    ("ESLint", (".eslintrc", ".eslintrc.json", ".eslintrc.js", ".eslintrc.cjs",
-                ".eslintrc.yml", "eslint.config.js", "eslint.config.mjs")),
+    (
+        "ESLint",
+        (
+            ".eslintrc",
+            ".eslintrc.json",
+            ".eslintrc.js",
+            ".eslintrc.cjs",
+            ".eslintrc.yml",
+            "eslint.config.js",
+            "eslint.config.mjs",
+        ),
+    ),
     ("Biome", ("biome.json", "biome.jsonc")),
     ("Ruff", ("ruff.toml", ".ruff.toml")),
     ("Black", ()),
@@ -46,7 +61,8 @@ def detect(repo: Repo) -> List[Finding]:
     findings.extend(_linters(repo))
 
     js_files = [
-        p for p in repo.files_matching(JS_EXTENSIONS)
+        p
+        for p in repo.files_matching(JS_EXTENSIONS)
         if "/test" not in p and ".test." not in p and ".spec." not in p
     ]
     if len(js_files) >= 8:
@@ -104,7 +120,7 @@ def _javascript_style(repo: Repo, files: List[str]) -> List[Finding]:
     quotes: Dict[str, int] = {}
     indents: Dict[str, int] = {}
 
-    for path, text in samples:
+    for _path, text in samples:
         lines = text.splitlines()[:400]
 
         statement_lines = [
@@ -116,7 +132,8 @@ def _javascript_style(repo: Repo, files: List[str]) -> List[Finding]:
         if len(statement_lines) >= 3:
             with_semi = sum(1 for line in statement_lines if line.endswith(";"))
             key = (
-                "end with semicolons" if with_semi > len(statement_lines) / 2
+                "end with semicolons"
+                if with_semi > len(statement_lines) / 2
                 else "omit semicolons"
             )
             semis[key] = semis.get(key, 0) + 1
@@ -165,7 +182,11 @@ def _javascript_style(repo: Repo, files: List[str]) -> List[Finding]:
     if prettier:
         config = repo.read_json(prettier) if prettier.endswith(("json", "rc")) else None
         if prettier == "package.json":
-            config = package.get("prettier") if isinstance(package.get("prettier"), dict) else None
+            config = (
+                package.get("prettier")
+                if isinstance(package.get("prettier"), dict)
+                else None
+            )
         declared = _prettier_expectations(config or {})
         conflict = _style_conflict(declared, quotes, semis)
         findings.append(
@@ -238,7 +259,9 @@ def _python_style(repo: Repo, files: List[str]) -> List[Finding]:
                 key="py-type-hints",
                 section=SECTION,
                 rule="Functions carry return type annotations. Match this.",
-                confidence=Confidence.STRONG if typed / total >= 0.85 else Confidence.LIKELY,
+                confidence=Confidence.STRONG
+                if typed / total >= 0.85
+                else Confidence.LIKELY,
                 evidence=[
                     Evidence(
                         "Python source files",
@@ -256,7 +279,9 @@ def _python_style(repo: Repo, files: List[str]) -> List[Finding]:
                 key="py-docstrings",
                 section=SECTION,
                 rule="Modules and functions carry docstrings. Match this.",
-                confidence=Confidence.STRONG if docstrings / total >= 0.85 else Confidence.LIKELY,
+                confidence=Confidence.STRONG
+                if docstrings / total >= 0.85
+                else Confidence.LIKELY,
                 evidence=[
                     Evidence(
                         "Python source files",

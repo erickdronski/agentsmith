@@ -35,7 +35,7 @@ from typing import Dict, List, Optional, Sequence
 from .evidence import Confidence, Finding
 from .repo import Repo
 
-__all__ = ["Drift", "check", "AGENT_FILES"]
+__all__ = ["AGENT_FILES", "Drift", "check"]
 
 #: Instruction files worth checking, in the order they are looked for.
 AGENT_FILES = (
@@ -67,7 +67,7 @@ SCRIPT_RE = re.compile(r"\b(?:npm|pnpm|yarn|bun)\s+run\s+([\w:.-]+)")
 
 
 class Drift:
-    __slots__ = ("kind", "severity", "message", "source", "suggestion")
+    __slots__ = ("kind", "message", "severity", "source", "suggestion")
 
     def __init__(
         self,
@@ -284,8 +284,7 @@ def _stale_scripts(repo: Repo, text: str, source: str) -> List[Drift]:
                     "no such script." % (source, name)
                 ),
                 source=source,
-                suggestion="Available scripts: %s"
-                % ", ".join(sorted(scripts)[:10]),
+                suggestion="Available scripts: %s" % ", ".join(sorted(scripts)[:10]),
             )
         )
     return out
@@ -302,12 +301,17 @@ def _undocumented(
     """
     lowered = prose.lower()
     checks = (
-        ("ci-commands", ("ci", "continuous integration", "workflow"),
-         "what CI runs"),
-        ("test-framework", ("test", "vitest", "jest", "pytest", "unittest"),
-         "how to run tests"),
-        ("boundaries", ("do not edit", "don't edit", "generated", "migration"),
-         "which paths must not be hand-edited"),
+        ("ci-commands", ("ci", "continuous integration", "workflow"), "what CI runs"),
+        (
+            "test-framework",
+            ("test", "vitest", "jest", "pytest", "unittest"),
+            "how to run tests",
+        ),
+        (
+            "boundaries",
+            ("do not edit", "don't edit", "generated", "migration"),
+            "which paths must not be hand-edited",
+        ),
         ("commit-convention", ("commit", "conventional"), "commit conventions"),
     )
 

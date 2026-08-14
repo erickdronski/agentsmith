@@ -16,12 +16,12 @@ first.
 from __future__ import annotations
 
 import json
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Sequence
 
 from .detectors import SECTION_ORDER
 from .evidence import Confidence, Finding
 
-__all__ = ["render_markdown", "render_json", "GENERATED_MARKER"]
+__all__ = ["GENERATED_MARKER", "render_json", "render_markdown"]
 
 #: Presence of this marker is how ``--check`` recognizes a file it produced,
 #: and how a human recognizes a file they should not hand-edit carelessly.
@@ -78,8 +78,7 @@ def render_markdown(
     lines.append(
         "_%d rule%s derived from this repository. Rules marked _(seen in N%% "
         "of files)_ are tendencies rather than absolutes — verify those before "
-        "relying on them._"
-        % (len(kept), "" if len(kept) == 1 else "s")
+        "relying on them._" % (len(kept), "" if len(kept) == 1 else "s")
     )
     return "\n".join(lines)
 
@@ -115,7 +114,9 @@ def _render_finding(finding: Finding, explain: bool) -> str:
             )
             for item in finding.evidence
         )
-        text += "\n  <details><summary>evidence</summary>\n\n%s\n\n  </details>" % detail
+        text += (
+            "\n  <details><summary>evidence</summary>\n\n%s\n\n  </details>" % detail
+        )
 
     return text + "\n"
 
@@ -136,9 +137,7 @@ def _indent(text: str) -> str:
     )
 
 
-def render_json(
-    findings: Sequence[Finding], repo_name: str, version: str
-) -> str:
+def render_json(findings: Sequence[Finding], repo_name: str, version: str) -> str:
     return json.dumps(
         {
             "tool": "agentsmith",

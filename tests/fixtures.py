@@ -72,7 +72,7 @@ class FixtureRepo:
 
     def _git(self, *args: str) -> None:
         subprocess.run(
-            ("git", "-C", self.root) + args,
+            ("git", "-C", self.root, *args),
             capture_output=True,
             check=False,
             timeout=20,

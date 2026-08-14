@@ -16,13 +16,13 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 
 __all__ = [
-    "Evidence",
-    "Finding",
-    "Confidence",
-    "dominant",
     "MIN_SAMPLE",
     "STRONG_SHARE",
     "WEAK_SHARE",
+    "Confidence",
+    "Evidence",
+    "Finding",
+    "dominant",
 ]
 
 #: Below this many observations, a majority means very little. Ten files
@@ -38,10 +38,10 @@ WEAK_SHARE = 0.6
 
 
 class Confidence:
-    CERTAIN = "certain"     # Read directly from config. Not a sample.
-    STRONG = "strong"       # Overwhelming majority of a real sample.
-    LIKELY = "likely"       # Clear majority, meaningful exceptions.
-    WEAK = "weak"           # A tendency. Reported, not asserted.
+    CERTAIN = "certain"  # Read directly from config. Not a sample.
+    STRONG = "strong"  # Overwhelming majority of a real sample.
+    LIKELY = "likely"  # Clear majority, meaningful exceptions.
+    WEAK = "weak"  # A tendency. Reported, not asserted.
 
     ORDER = (CERTAIN, STRONG, LIKELY, WEAK)
 
@@ -61,7 +61,7 @@ class Evidence:
     skeptical reader can open one and see for themselves.
     """
 
-    __slots__ = ("source", "detail", "observed", "total", "samples")
+    __slots__ = ("detail", "observed", "samples", "source", "total")
 
     def __init__(
         self,
@@ -109,7 +109,7 @@ class Evidence:
 class Finding:
     """One rule destined for the generated AGENTS.md."""
 
-    __slots__ = ("key", "section", "rule", "confidence", "evidence", "note")
+    __slots__ = ("confidence", "evidence", "key", "note", "rule", "section")
 
     def __init__(
         self,
