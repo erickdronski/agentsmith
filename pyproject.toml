@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentsmith-md"
-version = "0.1.0"
+version = "0.2.0"
 description = "Mine a repository's actual conventions into an AGENTS.md, with evidence for every rule. No LLM, no network, no config."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
 authors = [{ name = "Erick Dronski" }]
-keywords = ["agents-md", "claude-code", "codex", "cursor", "ai-agents", "conventions", "developer-tools", "linter"]
+keywords = ["agents-md", "claude-code", "codex", "cursor", "copilot", "ai-agents", "conventions", "developer-tools", "linter"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",

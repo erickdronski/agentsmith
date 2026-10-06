@@ -31,6 +31,11 @@ appears. This installs anywhere Python runs, with no supply chain.
 4. Test it against a real fixture repository — see `tests/fixtures.py`, which
    builds actual directories and actual git histories.
 
+If a detector needs to know what CI runs, use `agentsmith.ci.gate_commands`
+rather than reading workflow files: it already knows which workflows run on a
+change, which steps are setup, and how to follow `npm run verify` down to the
+tool it runs.
+
 ```bash
 python -m unittest discover -s tests -t .
 python -m agentsmith .          # dogfood it
@@ -45,8 +50,16 @@ tool said. Precision is the design constraint here: a checker that cries wolf
 gets deleted from CI within a week, taking its true findings with it.
 
 Every past false positive is pinned by a test. `Node.js` read as a missing file,
-a sibling repository flagged as a stale path, and the bare word "yarn" in a
-sentence about migrating away from it are all in `tests/test_drift.py`.
+a sibling repository flagged as a stale path, the bare word "yarn" in a
+sentence about migrating away from it, `install.sh` living in `automation/`,
+and `data/properties/<slug>/facts.toml` read literally are all in
+`tests/test_drift.py` — as is the rule that a file this tool generates must
+pass this tool's own `--check`.
+
+The same goes for invented rules. If the tool asserted something the repository
+does not support — a CI enforcement it never saw, a test runner named from one
+file — the report is as valuable as a false positive, and the fix gets a test
+asserting the claim is *not* made.
 
 ## Style
 

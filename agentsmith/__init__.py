@@ -14,6 +14,6 @@ detectable in CI rather than discovered by a confused agent.
     python3 -m agentsmith --check    # report drift in an existing file
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = ["__version__"]

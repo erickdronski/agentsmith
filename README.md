@@ -6,6 +6,7 @@ No LLM. No network. No config. Evidence for every rule.</p>
 <p align="center">
   <a href="#try-it">Try it</a> ·
   <a href="#the-part-that-matters-drift">Drift detection</a> ·
+  <a href="#one-set-of-rules-every-agent---target">Claude, Cursor, Copilot</a> ·
   <a href="#what-it-detects">What it detects</a> ·
   <a href="#what-it-refuses-to-do">What it refuses to do</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
@@ -17,7 +18,7 @@ No LLM. No network. No config. Evidence for every rule.</p>
   <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-174ea6">
   <img alt="Linux macOS Windows" src="https://img.shields.io/badge/tested_on-Linux%20%7C%20macOS%20%7C%20Windows-0f766e">
   <img alt="ruff" src="https://img.shields.io/badge/lint-ruff-d97706">
-  <img alt="86 tests" src="https://img.shields.io/badge/tests-111-6b21a8">
+  <img alt="215 tests" src="https://img.shields.io/badge/tests-215-6b21a8">
 </p>
 
 ---
@@ -41,6 +42,7 @@ agentsmith                    # print to stdout
 agentsmith --out AGENTS.md    # write the file
 agentsmith --explain          # include the evidence for every rule
 agentsmith --out AGENTS.md --merge   # keep your hand-written sections
+agentsmith --target agents,claude,cursor,copilot   # every agent's file, merged
 ```
 
 Installing from git is the supported path today — this is not on PyPI yet, and
@@ -51,53 +53,71 @@ name will be `agentsmith-md`.
 No API key. No config file. It runs offline in about a second on a large
 repository, and it never writes anything you did not ask for.
 
-Real output, from a React Native codebase:
+Real output, from a React Native codebase (an excerpt — Stack, Layout, and
+part of the history section are cut for length):
 
 ```markdown
 ## Commands
 
 - Use `npm` for all dependency operations.
+
 - Use the package scripts rather than invoking tools directly:
+
+  - `npm run start` — expo start
   - `npm run test` — vitest run
+  - `npm run lint` — expo lint --no-cache
   - `npm run typecheck` — tsc --noEmit
 
 ## Verification
 
-- CI runs these commands. Work is not done until they pass locally:
-  - `npm ci`
-  - `npm run verify`
+- No GitHub Actions workflow here runs on push or pull request — all 9 are scheduled, manually dispatched, or tag-triggered. Do not assume CI will catch a broken change.
 
 ## Tests
 
 - Tests run under `vitest`.
+
 - Tests live in a top-level `tests/` directory.
-- Test files are named `name.test.ext`.
+
+- Test files are named `<name>.test.<ext>`.
+
 - Tests are grouped in `describe()` blocks.
 
 ## Code style
 
+- ESLint (linter) is configured in `eslint.config.js`. Run `npm run lint` before finishing.
+
+- String literals use single quotes.
+
 - Statements end with semicolons.
-- String literals use single quotes. _(seen in 84% of files)_
+
 - Indentation is 2 spaces. _(seen in 69% of files)_
 
 ## Git and history
 
-- These files change most often, so they are the ones most likely to conflict
-  with concurrent work. Re-read them before editing rather than working from
-  memory:
-  - `docs/HANDOFF.md` — changed in 181 of the last 300 commits
-  - `src/app/product/[id].tsx` — changed in 35 of the last 300 commits
+- These files change most often, so they are the ones most likely to conflict with concurrent work. Re-read them before editing rather than working from memory:
+
+  - `docs/HANDOFF.md` — changed in 158 of the last 300 commits
+  - `src/app/product/[id].tsx` — changed in 30 of the last 300 commits
 
 ## Do not edit
 
-- `supabase/migrations/` — applied migrations are immutable, add a new one
-- `package-lock.json` — regenerate through the package manager
+- Do not hand-edit these:
+
+  - `package-lock.json` — regenerate through the package manager, never hand-edit
+  - `supabase/migrations/` — Applied migrations are immutable — add a new one instead of editing an existing file
 ```
 
-Note the two rules marked _(seen in 84% of files)_. Those are tendencies, not
-laws, and the file says so. A rule backed by 84% and a rule backed by 100% are
+Note the rule marked _(seen in 69% of files)_. That is a tendency, not a law,
+and the file says so. A rule backed by 69% and a rule backed by 100% are
 different information, and flattening them into the same confident sentence is
 how instruction files start lying.
+
+Note the Verification section, too. This repository has nine workflows, and
+version 0.1 took the commands of a manually dispatched release job and wrote
+"CI runs these commands. Work is not done until they pass locally" — a
+sentence that reads like every other generated rule and was false. Only
+workflows that run on push or pull request count as checks now, and when none
+do, the file says that instead.
 
 ## The part that matters: drift
 
@@ -140,7 +160,21 @@ the only class that fails a build; stale references warn; undocumented
 conventions are informational. And the checker deliberately declines to guess —
 it will not flag `` `Node.js` `` as a missing file, or `` `../sibling-repo/` ``
 as a broken path, or the word "yarn" in a sentence about migrating away from it.
-Each of those is a test in [`tests/test_drift.py`](tests/test_drift.py).
+
+A reference is read the way its author meant it, in order: the literal path
+first; then, for a bare filename like `` `install.sh` ``, the same name anywhere
+in the project; then, for a template like
+`` `data/properties/<slug>/facts.toml` `` (or `{name}`, `*`, `**`, `...`,
+`NNNN`), a glob. Bracketed names such as `` `src/app/product/[id].tsx` `` are
+real files in Next.js and expo-router, so they are only treated as templates
+after the literal path fails. A file that genuinely is not there anymore is
+still reported. Each of those is a test in
+[`tests/test_drift.py`](tests/test_drift.py), and so is the rule that a file
+this tool generates must pass this tool's own check.
+
+`--check` reads what the agent actually reads. A `CLAUDE.md` that is just
+`@AGENTS.md` is checked through the import (and an import of a missing file is
+reported), and `--file .cursor/rules/x.mdc` skips the frontmatter.
 
 ## What it detects
 
@@ -148,9 +182,9 @@ Each of those is a test in [`tests/test_drift.py`](tests/test_drift.py).
 |---------|-------------|
 | **Stack** | Dependencies, ecosystem marker files, `requires-python` |
 | **Commands** | Lockfiles, `packageManager`, package scripts, workspaces |
-| **Verification** | The actual `run:` steps in your CI workflows, plus version matrices and pre-commit hooks |
+| **Verification** | The commands in CI workflows that run on push or pull request — setup steps kept apart from checks, `${{ matrix.* }}` values expanded — plus version matrices and commit hooks |
 | **Tests** | Framework config, where test files actually live, how they are named, `describe()` vs bare `test()` |
-| **Code style** | Linter configs **and the committed source** — including when the two disagree |
+| **Code style** | Linter, formatter, and type-checker configs, whether CI actually runs them, **and the committed source** — including when the two disagree |
 | **Layout** | Top-level structure, file naming per directory, path aliases |
 | **Git and history** | Commit conventions with real type and scope lists, subject mood, branch naming, most-churned files |
 | **Do not edit** | Migrations, generated output, vendored code, lockfiles, `linguist-generated` |
@@ -187,6 +221,19 @@ So:
   value of the specific rules sitting next to the filler.
 - **Vendored and generated code is never sampled.** Otherwise a checked-in
   `node_modules` produces an AGENTS.md describing a dependency's house style.
+- **Only what git considers part of the project is sampled.** A gitignored
+  test-artifacts directory, or a Claude Code worktree under
+  `.claude/worktrees/` holding a second copy of the repository, is not the
+  project, and counting it once produced rules about another checkout's
+  migrations.
+- **CI enforcement is never assumed.** "CI will reject this" is only written
+  when a workflow that runs on push or pull request is seen running the tool —
+  directly, or through `npm run verify` → `npm run lint` → `eslint .` — in a
+  step that can fail the build. A configured linter CI never runs is described
+  as configured, with the command to run it, and nothing more. A formatter
+  only counts as enforced in check mode, because `black .` in CI rewrites files
+  and exits 0. A nightly cron job and a manual release button are not merge
+  gates, and their commands are never listed as checks.
 - **It will not silently overwrite a hand-written file.** If `AGENTS.md` exists
   without the generated marker, you get a warning naming what is being replaced.
 
@@ -227,6 +274,46 @@ Merging is idempotent, so it is safe on a schedule or in a pre-commit hook. Use
 `--dry-run` to see what would change first. If the markers are ever malformed,
 it **refuses and writes nothing** rather than guessing which text is yours.
 
+Merged into a file that already has a title, the block adds no title of its
+own. A file written earlier by plain `--out` (generated, but without the
+markers) gets a warning on merge: its old rules sit outside the block and would
+otherwise never be updated again.
+
+## One set of rules, every agent: `--target`
+
+A team is rarely on one tool. Claude Code reads `CLAUDE.md`, Cursor reads
+`.cursor/rules/*.mdc`, Copilot reads `.github/copilot-instructions.md` — and
+four hand-maintained copies of the same rules drift apart, which is the problem
+this tool exists to remove.
+
+```bash
+agentsmith --target agents,claude,cursor,copilot --dry-run   # show, write nothing
+agentsmith --target agents,claude,cursor,copilot
+```
+
+| Target | Writes | What goes in it |
+|---|---|---|
+| `agents` (default file) | `AGENTS.md` | the generated rules |
+| `claude` | `CLAUDE.md` | an `@AGENTS.md` import, so Claude Code reads the same file instead of a copy. Without an AGENTS.md (existing or requested in the same run) the rules go in directly — an import of a missing file would be a broken instruction |
+| `cursor` | `.cursor/rules/agentsmith.mdc` | the rules, after `description:` / `alwaysApply: true` frontmatter |
+| `copilot` | `.github/copilot-instructions.md` | the rules |
+
+Every target goes through the same marker/merge machinery as `--merge`:
+generated content lives between the markers, and **everything outside them is
+never touched** — your existing `CLAUDE.md` keeps every line and gains the
+import. A `CLAUDE.md` that already imports `AGENTS.md` is left alone. All
+targets are planned before any is written, so if one file has malformed
+markers the run refuses and **writes nothing at all**. Running it again
+changes nothing.
+
+`--target` writes each tool's file at its conventional path inside the analyzed
+repository; `--out` writes one file you name, anywhere. They cannot be combined.
+To keep the extra files honest in CI, check them by name:
+
+```bash
+agentsmith --check --file .cursor/rules/agentsmith.mdc
+```
+
 ## Use it as a starting point, not an oracle
 
 The generated file is a floor, not a ceiling. It captures what is mechanically
@@ -243,11 +330,17 @@ half.
 
 ```
 agentsmith [path]
-  --out, -o FILE        write to a file instead of stdout
+  --out, -o FILE        write to one file instead of stdout
+  --merge               with --out, rewrite only the managed block
+  --target TOOL         agents, claude, cursor, copilot; repeatable or
+                        comma-separated; always merges; not with --out
+  --dry-run             with --out or --target, print what would be written
+                        and write nothing
   --format {markdown,json}
   --explain             include evidence for every rule, as collapsible detail
   --check               report drift in an existing instruction file
-  --file FILE           which file to check (default: AGENTS.md, CLAUDE.md, ...)
+  --file FILE           which file to check (default: AGENTS.md, CLAUDE.md, ...);
+                        @imports are followed, .mdc frontmatter is skipped
   --strict              in --check, also fail on stale and undocumented findings
   --min-confidence {certain,strong,likely,weak}
   --skip DETECTOR       skip a detector; repeatable
@@ -259,7 +352,7 @@ own tooling on top.
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -t .   # 111 tests
+python -m unittest discover -s tests -t .   # 215 tests
 ```
 
 Detectors are tested against real repositories built on disk, including real git

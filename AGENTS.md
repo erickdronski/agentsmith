@@ -1,3 +1,5 @@
+<!-- agentsmith:begin -->
+
 # AGENTS.md
 
 <!-- agentsmith:generated -->
@@ -12,23 +14,24 @@ Run `agentsmith --check` to find out when this file has drifted from reality.
 
 - Python support is constrained: `requires-python = ">=3.9"`. Do not use syntax newer than the floor.
 
-
 ## Commands
 
 - Python packaging is declared in `pyproject.toml` with no lockfile; dependencies resolve at install time.
 
-
 ## Verification
 
-- CI runs these commands. Work is not done until they pass locally:
+- CI checks changes with these commands. Work is not done until they pass locally:
 
   - `python -m unittest discover -s tests -t . -v`
   - `python -m agentsmith . --explain`
   - `python -m agentsmith . --check`
   - `python -m agentsmith . --format json | python -c "import json,sys; json.load(sys.stdin)"`
+  - `ruff check --output-format=github .`
+  - `ruff format --check --diff .`
+
+  Before the checks, CI sets up with `pip install git+https://github.com/erickdronski/agentsmith`, `pip install .` and `pip install ruff==0.16.3`.
 
   CI runs a matrix across 3.9, 3.10, 3.11, 3.12, 3.13 — do not use syntax unavailable on the oldest of these.
-
 
 ## Tests
 
@@ -36,23 +39,43 @@ Run `agentsmith --check` to find out when this file has drifted from reality.
 
 - Tests live in a top-level `tests/` directory.
 
+- Test files are named `test_<name>.py`.
 
 ## Code style
 
-- Modules and functions carry docstrings. Match this.
+- The configured line length is 88 characters (`line-length = 88` in `pyproject.toml`).
 
-- Functions carry return type annotations. Match this. _(seen in 67% of files)_
+- Ruff (linter and formatter) is configured in `pyproject.toml`. CI runs `ruff check --output-format=github .` and `ruff format --check --diff .` and rejects work that fails them. Run `ruff check .` and `ruff format .` before finishing.
 
+- Python modules and functions carry docstrings. Match this.
+
+- Python functions carry return type annotations. Match this. _(seen in 62% of files)_
 
 ## Layout
 
 - Top-level structure:
 
-  - `agentsmith/` — 14 files
-  - `tests/` — 5 files
-  - `.github/` — 2 files
+  - `agentsmith/` — 18 files
+  - `tests/` — 9 files
+  - `.github/` — 3 files
 
+- Files in `tests/` are named in snake_case.
+
+## Git and history
+
+- These files change most often, so they are the ones most likely to conflict with concurrent work. Re-read them before editing rather than working from memory:
+
+  - `README.md` — changed in 6 of the last 15 commits
+  - `tests/test_detectors.py` — changed in 5 of the last 15 commits
+  - `pyproject.toml` — changed in 4 of the last 15 commits
+  - `agentsmith/cli.py` — changed in 4 of the last 15 commits
+  - `tests/test_cli.py` — changed in 4 of the last 15 commits
+  - `tests/test_merge.py` — changed in 4 of the last 15 commits
+  - `agentsmith/detectors/testing.py` — changed in 4 of the last 15 commits
+  - `.github/workflows/release.yml` — changed in 3 of the last 15 commits
 
 ---
 
-_8 rules derived from this repository. Rules marked _(seen in N% of files)_ are tendencies rather than absolutes — verify those before relying on them._
+_13 rules derived from this repository._ Rules marked _(seen in N% of files)_ are tendencies rather than absolutes — verify those before relying on them.
+
+<!-- agentsmith:end -->
