@@ -10,6 +10,10 @@ Two design decisions worth knowing:
   400-file ``node_modules`` checked in would otherwise produce an AGENTS.md
   describing a dependency's house style. The exclusion list is deliberately
   aggressive.
+* **In a git repository, git decides what belongs to the project.** Tracked
+  files plus untracked ones that are not ignored — so a gitignored build
+  directory, or a Claude Code worktree checked out under ``.claude/worktrees/``,
+  is never described as this project's convention.
 * **File reads are capped and lossy-tolerant.** Detectors sample; they do not
   parse whole codebases. A convention visible in 300 files is visible in 300
   files, and reading 30,000 to confirm it buys nothing but latency.
@@ -103,6 +107,7 @@ class Repo:
             raise RepoError("not a directory: %s" % root)
         self.root = root
         self._files: Optional[List[str]] = None
+        self._all_files: Optional[List[str]] = None
         self._git_available: Optional[bool] = None
         self._text_cache: Dict[str, Optional[str]] = {}
 
@@ -153,24 +158,77 @@ class Repo:
     # -- file walking ----------------------------------------------------
 
     def files(self) -> List[str]:
-        """All non-excluded files, as repo-relative POSIX paths."""
-        if self._files is not None:
-            return self._files
+        """Files worth sampling for conventions, as repo-relative POSIX paths.
 
+        A subset of :meth:`all_files`: generated files and tooling
+        dot-directories are dropped as well, because sampling them would
+        describe the tools rather than the project.
+        """
+        if self._files is None:
+            self._files = [p for p in self.all_files() if _sampleable(p)][:MAX_FILES]
+        return self._files
+
+    def all_files(self) -> List[str]:
+        """Every file that belongs to the project, vendored code excluded.
+
+        This is the set to ask "does this file exist anywhere here?" — it keeps
+        lockfiles and tooling directories that :meth:`files` leaves out of
+        sampling, because a reference to `.husky/pre-commit` or `install.sh`
+        in a tooling directory is still a real reference.
+        """
+        if self._all_files is not None:
+            return self._all_files
+        listed = self._git_listing()
+        if listed is None:
+            listed = self._walk()
+        self._all_files = listed
+        return listed
+
+    def _git_listing(self) -> Optional[List[str]]:
+        """Tracked plus untracked-but-not-ignored files, or ``None`` without git.
+
+        Asking git rather than walking the disk is what keeps ignored output
+        (a 1,600-file test-artifacts directory, a nested worktree holding a
+        full second copy of the repository) out of every count. Before this,
+        such a worktree could fill the file budget before `.github/` was ever
+        reached, silently deleting the Verification section.
+        """
+        if not self.is_git:
+            return None
+        output = self.git(
+            "ls-files", "-z", "--cached", "--others", "--exclude-standard", timeout=60
+        )
+        if output is None:
+            return None
+        collected = set()
+        for relative in output.split("\0"):
+            if not relative or _is_vendored(relative):
+                continue
+            # Submodules and nested repositories are listed as a bare directory,
+            # and files deleted from the working tree are still in the index.
+            # Neither is a file a reader could open.
+            if not os.path.isfile(os.path.join(self.root, relative)):
+                continue
+            collected.add(relative)
+        return sorted(collected)
+
+    def _walk(self) -> List[str]:
         collected: List[str] = []
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if _walk_into(d)]
+            # A directory with its own `.git` is a separate checkout — a nested
+            # repository or a worktree — whose files are not this project's.
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if _walk_into(d)
+                and not os.path.exists(os.path.join(dirpath, d, ".git"))
+            ]
             for filename in filenames:
                 full = os.path.join(dirpath, filename)
-                relative = os.path.relpath(full, self.root).replace(os.sep, "/")
-                if _is_generated(relative):
-                    continue
-                collected.append(relative)
+                collected.append(os.path.relpath(full, self.root).replace(os.sep, "/"))
                 if len(collected) >= MAX_FILES:
-                    self._files = sorted(collected)
-                    return self._files
-        self._files = sorted(collected)
-        return self._files
+                    return sorted(collected)
+        return sorted(collected)
 
     def files_matching(
         self, extensions: Sequence[str], limit: Optional[int] = None
@@ -200,7 +258,10 @@ class Repo:
 
     @property
     def is_git(self) -> bool:
-        return os.path.isdir(os.path.join(self.root, ".git"))
+        # `.git` is a file, not a directory, in a linked worktree — which is
+        # exactly where coding agents run. Requiring a directory made every
+        # worktree look like it had no history.
+        return os.path.exists(os.path.join(self.root, ".git"))
 
     def git(self, *args: str, timeout: int = 20) -> Optional[str]:
         """Run a read-only git command, returning ``None`` on any failure.
@@ -263,6 +324,21 @@ class Repo:
             names.append(name)
         return names
 
+    def recent_commit_count(self, limit: int = 300) -> int:
+        """How many non-merge commits the history window actually holds.
+
+        A young repository has fewer than ``limit``, and saying "changed in 43
+        of the last 300 commits" about a 179-commit history is a small lie
+        that teaches readers to discount the numbers.
+        """
+        output = self.git(
+            "rev-list", "--count", "--no-merges", "--max-count", str(limit), "HEAD"
+        )
+        try:
+            return int((output or "").strip())
+        except ValueError:
+            return 0
+
     def changed_file_counts(self, limit: int = 300) -> Dict[str, int]:
         """How often each path has changed recently — a proxy for hot spots."""
         output = self.git(
@@ -295,8 +371,20 @@ def _walk_into(name: str) -> bool:
     return True
 
 
+def _is_vendored(relative: str) -> bool:
+    return any(part in EXCLUDED_DIRS for part in relative.split("/"))
+
+
+def _sampleable(relative: str) -> bool:
+    """Should this file count as evidence of the project's own conventions?"""
+    directories = relative.split("/")[:-1]
+    if not all(_walk_into(name) for name in directories):
+        return False
+    return not _is_generated(relative)
+
+
 def _is_generated(relative: str) -> bool:
-    if any(part in EXCLUDED_DIRS for part in relative.split("/")):
+    if _is_vendored(relative):
         return True
     return any(pattern.search(relative) for pattern in GENERATED_PATTERNS)
 

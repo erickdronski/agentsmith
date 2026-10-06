@@ -6,6 +6,7 @@ because the failure mode that would make this tool useless is not missing a
 convention — it is confidently inventing one from four files.
 """
 
+import os
 import unittest
 
 from agentsmith.detectors import (
@@ -18,6 +19,7 @@ from agentsmith.detectors import (
     verification,
 )
 from agentsmith.evidence import Confidence, dominant
+from agentsmith.repo import Repo
 
 from .fixtures import PY_SOURCE, TS_SOURCE, TS_SOURCE_NO_SEMI, FixtureRepo, keys
 
@@ -370,6 +372,81 @@ class TestVerification(unittest.TestCase):
         with FixtureRepo() as fixture:
             fixture.write("README.md", "# hi")
             self.assertEqual(verification.detect(fixture.repo()), [])
+
+
+class TestFileListing(unittest.TestCase):
+    """What counts as the project decides every count in the output."""
+
+    def test_gitignored_files_are_not_sampled(self):
+        with FixtureRepo(git=True) as fixture:
+            fixture.write(".gitignore", "artifacts/\n")
+            fixture.write("src/app.ts", TS_SOURCE)
+            fixture.write_many(["artifacts/report-%d.js" % i for i in range(30)], "x")
+            files = fixture.repo().files()
+            self.assertIn("src/app.ts", files)
+            self.assertFalse([f for f in files if f.startswith("artifacts/")])
+
+    def test_nested_worktree_is_not_part_of_the_project(self):
+        """A Claude Code worktree under `.claude/worktrees/` is a second copy
+        of the repository; its migrations are not this checkout's."""
+        with FixtureRepo() as fixture:
+            fixture.write("src/app.ts", TS_SOURCE)
+            fixture.write(".claude/worktrees/feature/.git", "gitdir: /elsewhere\n")
+            fixture.write(".claude/worktrees/feature/supabase/migrations/001.sql", "x")
+            repo = fixture.repo()
+            self.assertFalse([f for f in repo.files() if "worktrees" in f])
+            boundaries = keys(layout.detect(repo)).get("boundaries")
+            self.assertTrue(boundaries is None or "worktrees" not in boundaries.rule)
+
+    def test_worktree_checkout_is_recognised_as_git(self):
+        """In a linked worktree `.git` is a file — and worktrees are where
+        coding agents run. History must still be read there."""
+        with FixtureRepo(git=True) as fixture:
+            fixture.commit("Add the first file", touch="src/app.ts")
+            fixture._git(
+                "worktree", "add", "-q", ".claude/worktrees/feat", "-b", "feat"
+            )
+            outer = fixture.repo()
+            self.assertFalse([f for f in outer.all_files() if "worktrees" in f])
+            inner = Repo(os.path.join(fixture.root, ".claude", "worktrees", "feat"))
+            self.assertTrue(inner.is_git)
+            self.assertEqual(inner.commit_subjects(), ["Add the first file"])
+
+    def test_tooling_files_are_findable_but_not_sampled(self):
+        with FixtureRepo(git=True) as fixture:
+            fixture.write(".cursor/install.sh", "echo hi")
+            fixture.write("src/app.ts", TS_SOURCE)
+            repo = fixture.repo()
+            self.assertIn(".cursor/install.sh", repo.all_files())
+            self.assertNotIn(".cursor/install.sh", repo.files())
+
+
+class TestHotPathAccuracy(unittest.TestCase):
+    def test_window_is_the_real_commit_count(self):
+        """ "of the last 300 commits" about a 26-commit history is a small lie."""
+        with FixtureRepo(git=True) as fixture:
+            # The detector needs 20 distinct paths and one changed 4+ times.
+            for i in range(6):
+                fixture.commit("change %d" % i, touch="src/hot.ts")
+            for i in range(20):
+                fixture.commit("other %d" % i, touch="src/other-%d.ts" % i)
+            rule = keys(history.detect(fixture.repo()))["hot-paths"].rule
+            self.assertIn("of the last 26 commits", rule)
+            self.assertNotIn("300", rule)
+
+    def test_deleted_files_are_not_listed(self):
+        with FixtureRepo(git=True) as fixture:
+            for i in range(8):
+                fixture.commit("change %d" % i, touch="src/gone.ts")
+            for i in range(20):
+                fixture.commit("other %d" % i, touch="src/other-%d.ts" % i)
+            for i in range(5):
+                fixture.commit("keep %d" % i, touch="src/kept.ts")
+            fixture._git("rm", "-q", "src/gone.ts")
+            fixture._git("commit", "-q", "-m", "Remove gone")
+            rule = keys(history.detect(fixture.repo()))["hot-paths"].rule
+            self.assertNotIn("src/gone.ts", rule)
+            self.assertIn("src/kept.ts", rule)
 
 
 class TestDetectorIsolation(unittest.TestCase):

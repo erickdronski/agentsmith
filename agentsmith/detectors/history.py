@@ -245,12 +245,20 @@ def _hot_paths(repo: Repo) -> Optional[Finding]:
     if len(counts) < 20:
         return None
 
-    ranked = sorted(counts.items(), key=lambda item: -item[1])[:8]
-    if ranked[0][1] < 4:
+    # A file deleted last month can still top the churn list. Telling an agent
+    # to re-read a file that no longer exists is an instruction it cannot
+    # follow, so only paths that are still part of the project are ranked.
+    present = set(repo.all_files())
+    ranked = sorted(
+        ((path, count) for path, count in counts.items() if path in present),
+        key=lambda item: -item[1],
+    )[:8]
+    if not ranked or ranked[0][1] < 4:
         return None
 
+    window = repo.recent_commit_count(limit=300) or 300
     listed = "\n".join(
-        "- `%s` — changed in %d of the last 300 commits" % (path, count)
+        "- `%s` — changed in %d of the last %d commits" % (path, count, window)
         for path, count in ranked
     )
     return Finding(
@@ -265,7 +273,7 @@ def _hot_paths(repo: Repo) -> Optional[Finding]:
         evidence=[
             Evidence(
                 "git log --name-only",
-                "Change frequency over the last 300 commits",
+                "Change frequency over the last %d commits" % window,
                 samples=[path for path, _ in ranked[:5]],
             )
         ],
