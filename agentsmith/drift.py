@@ -245,8 +245,12 @@ def _strip_frontmatter(text: str) -> str:
 
     The frontmatter describes the rule file to the editor; its `description:`
     is not an instruction to check, and a glob in `globs:` is not a path.
+    Files are read as raw bytes, so a rule saved on Windows arrives with CRLF
+    line endings and sometimes a byte-order mark; both are accepted.
     """
-    match = re.match(r"^---[ \t]*\n.*?\n---[ \t]*(\n|$)", text, re.DOTALL)
+    match = re.match(
+        r"^\ufeff?---[ \t]*\r?\n.*?\r?\n---[ \t]*(\r?\n|$)", text, re.DOTALL
+    )
     return text[match.end() :] if match else text
 
 

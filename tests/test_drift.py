@@ -5,6 +5,7 @@ contradiction gets removed from CI within a week, taking the true findings with
 it — so roughly half of these tests assert that something is *not* reported.
 """
 
+import os
 import unittest
 
 from agentsmith.detectors import run_all
@@ -373,6 +374,23 @@ class TestImportsAndFrontmatter(unittest.TestCase):
                 "---\ndescription: Rules for `src/legacy.ts`\nglobs: src/**/*.ts\n"
                 "alwaysApply: true\n---\n\nEntry point is `src/index.ts`.\n",
             )
+            result = run_check(fixture, agent_file=".cursor/rules/x.mdc")
+            self.assertTrue(result["checked"])
+            self.assertEqual(kinds(result, "stale"), [])
+
+    def test_mdc_frontmatter_saved_with_crlf_and_bom_is_ignored(self):
+        # Written as bytes so the line endings are CRLF on every platform;
+        # this is how a rule file saved by a Windows editor arrives.
+        with FixtureRepo() as fixture:
+            fixture.write("src/index.ts", TS_SOURCE)
+            content = (
+                "\ufeff---\r\ndescription: Rules for `src/legacy.ts`\r\n"
+                "alwaysApply: true\r\n---\r\n\r\nEntry point is `src/index.ts`.\r\n"
+            )
+            path = os.path.join(fixture.root, ".cursor", "rules", "x.mdc")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as handle:
+                handle.write(content.encode("utf-8"))
             result = run_check(fixture, agent_file=".cursor/rules/x.mdc")
             self.assertTrue(result["checked"])
             self.assertEqual(kinds(result, "stale"), [])

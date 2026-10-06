@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.1] — 2026-10-06
+
+### Fixed
+
+- `--check` ignores the frontmatter of a Cursor rule saved with Windows line
+  endings or a byte-order mark. The file is read as raw bytes, so a
+  `---\r\n` block was never recognised, and its `description:` was checked
+  as if it were rules. Caught by the Windows CI job; a new test writes CRLF
+  bytes explicitly so the case fails on every platform, not only on Windows.
+
 ## [0.2.0] — 2026-10-06
 
 Precision fixes from running 0.1 against real repositories, Markdown that

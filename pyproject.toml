@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentsmith-md"
-version = "0.2.0"
+version = "0.2.1"
 description = "Mine a repository's actual conventions into an AGENTS.md, with evidence for every rule. No LLM, no network, no config."
 readme = "README.md"
 license = { text = "MIT" }

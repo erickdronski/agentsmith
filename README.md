@@ -18,7 +18,7 @@ No LLM. No network. No config. Evidence for every rule.</p>
   <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-174ea6">
   <img alt="Linux macOS Windows" src="https://img.shields.io/badge/tested_on-Linux%20%7C%20macOS%20%7C%20Windows-0f766e">
   <img alt="ruff" src="https://img.shields.io/badge/lint-ruff-d97706">
-  <img alt="215 tests" src="https://img.shields.io/badge/tests-215-6b21a8">
+  <img alt="216 tests" src="https://img.shields.io/badge/tests-216-6b21a8">
 </p>
 
 ---
@@ -352,7 +352,7 @@ own tooling on top.
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -t .   # 215 tests
+python -m unittest discover -s tests -t .   # 216 tests
 ```
 
 Detectors are tested against real repositories built on disk, including real git
