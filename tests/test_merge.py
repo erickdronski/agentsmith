@@ -200,6 +200,44 @@ class TestMergeCLI(unittest.TestCase):
         self.assertEqual(self.read(fixture), before, "wrote despite refusing")
         self.assertIn("marker", err)
 
+    def test_merged_block_has_no_second_title(self):
+        """The hand-written file already has its H1; the block is a section."""
+        fixture = self.repo_with_handwritten_agents()
+        target = os.path.join(fixture.root, "AGENTS.md")
+        run_cli(fixture.root, "--out", target, "--merge")
+        text = self.read(fixture)
+        self.assertEqual(text.count("# AGENTS.md"), 1)
+        self.assertNotIn("\n\n\n", text)
+
+    def test_merging_into_a_full_generation_warns_about_the_leftovers(self):
+        """A file from plain --out has no markers. Merging keeps every line —
+        including the old rules, which would then never be updated. Say so."""
+        fixture = self.repo_with_handwritten_agents()
+        target = os.path.join(fixture.root, "AGENTS.md")
+        run_cli(fixture.root, "--out", target)
+        _code, _out, err = run_cli(fixture.root, "--out", target, "--merge")
+        self.assertIn("earlier full generation", err)
+        _code, _out, err = run_cli(fixture.root, "--out", target, "--merge")
+        self.assertIn("earlier full generation", err)
+
+    def test_merging_into_a_block_only_file_does_not_warn(self):
+        fixture = self.repo_with_handwritten_agents()
+        os.remove(os.path.join(fixture.root, "AGENTS.md"))
+        target = os.path.join(fixture.root, "AGENTS.md")
+        run_cli(fixture.root, "--out", target, "--merge")
+        _code, _out, err = run_cli(fixture.root, "--out", target, "--merge")
+        self.assertNotIn("warning", err)
+        self.assertTrue(self.read(fixture).startswith(BEGIN_MARKER + "\n\n# AGENTS.md"))
+
+    def test_dry_run_prints_the_merged_file(self):
+        fixture = self.repo_with_handwritten_agents()
+        target = os.path.join(fixture.root, "AGENTS.md")
+        _code, out, _err = run_cli(
+            fixture.root, "--out", target, "--merge", "--dry-run"
+        )
+        self.assertIn("eventually consistent", out)
+        self.assertIn(BEGIN_MARKER, out)
+
     def test_repeated_merges_stay_identical(self):
         fixture = self.repo_with_handwritten_agents()
         target = os.path.join(fixture.root, "AGENTS.md")

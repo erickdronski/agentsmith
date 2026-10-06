@@ -10,9 +10,15 @@ So these run the entry points as subprocesses. They are slow relative to the
 rest of the suite and they cover the one path nothing else does.
 """
 
+import os
+import re
 import subprocess
 import sys
 import unittest
+
+import agentsmith
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class TestEntryPoints(unittest.TestCase):
@@ -29,10 +35,26 @@ class TestEntryPoints(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("agentsmith", result.stdout + result.stderr)
 
+    def test_version_matches_the_package_metadata(self):
+        """`--version` and pyproject.toml are two copies of one fact, and the
+        kind of thing a release bumps in one place and forgets in the other."""
+        with open(os.path.join(ROOT, "pyproject.toml"), encoding="utf-8") as handle:
+            declared = re.search(r'^version = "([^"]+)"', handle.read(), re.M).group(1)
+        self.assertEqual(agentsmith.__version__, declared)
+        result = self.run_module("--version")
+        self.assertIn(declared, result.stdout + result.stderr)
+
     def test_help_executes_as_main(self):
         result = self.run_module("--help")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("usage", (result.stdout + result.stderr).lower())
+
+    def test_help_survives_a_windows_console_encoding(self):
+        """Windows pipes `--help` through cp1252; one arrow in a help string
+        raises UnicodeEncodeError there and nowhere else."""
+        from agentsmith.cli import build_parser
+
+        build_parser().format_help().encode("cp1252")
 
     def test_no_warnings_on_import(self):
         """A SyntaxWarning from an invalid escape would surface here."""

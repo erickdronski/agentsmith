@@ -138,7 +138,7 @@ class TestRender(unittest.TestCase):
         self.assertIn(GENERATED_MARKER, output)
 
     def test_json_shape(self):
-        payload = json.loads(render_json([finding()], "repo", "0.1.0"))
+        payload = json.loads(render_json([finding()], "repo", "0.2.0"))
         self.assertEqual(payload["tool"], "agentsmith")
         self.assertEqual(payload["finding_count"], 1)
         self.assertEqual(payload["findings"][0]["key"], "k")
@@ -203,6 +203,54 @@ class TestCLI(unittest.TestCase):
             # specifically is gone rather than the word "pnpm".
             self.assertNotIn("for all dependency operations", out)
 
+    def test_title_follows_the_output_file(self):
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"name": "x"})
+            fixture.write("pnpm-lock.yaml", "")
+            target = os.path.join(fixture.root, "CLAUDE.md")
+            run_cli(fixture.root, "--out", target)
+            with open(target, encoding="utf-8") as handle:
+                self.assertTrue(handle.read().startswith("# CLAUDE.md\n"))
+
+    def test_dry_run_without_merge_writes_nothing(self):
+        """--dry-run was ignored without --merge, and the file was replaced."""
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"name": "x"})
+            fixture.write("pnpm-lock.yaml", "")
+            fixture.write("AGENTS.md", "# Written by a human\n")
+            target = os.path.join(fixture.root, "AGENTS.md")
+            code, out, err = run_cli(fixture.root, "--out", target, "--dry-run")
+            self.assertEqual(code, 0)
+            with open(target, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), "# Written by a human\n")
+            self.assertIn("would replace", err)
+            self.assertIn("--merge", err)
+            self.assertIn("pnpm", out)
+
+    def test_target_and_out_are_mutually_exclusive(self):
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"name": "x"})
+            code, _, err = run_cli(fixture.root, "--target", "claude", "--out", "x.md")
+            self.assertEqual(code, 2)
+            self.assertIn("cannot be combined", err)
+            self.assertFalse(os.path.exists(os.path.join(fixture.root, "CLAUDE.md")))
+
+    def test_unknown_target_is_rejected(self):
+        with FixtureRepo() as fixture:
+            code, _, err = run_cli(fixture.root, "--target", "agents,vim")
+            self.assertEqual(code, 2)
+            self.assertIn("unknown target 'vim'", err)
+            self.assertFalse(os.path.exists(os.path.join(fixture.root, "AGENTS.md")))
+
+    def test_target_rejects_json_and_check(self):
+        with FixtureRepo() as fixture:
+            self.assertEqual(
+                run_cli(fixture.root, "--target", "agents", "--format", "json")[0], 2
+            )
+            self.assertEqual(
+                run_cli(fixture.root, "--target", "agents", "--check")[0], 2
+            )
+
     def test_bad_path_exits_two(self):
         code, _, err = run_cli("/nonexistent/path/xyz")
         self.assertEqual(code, 2)
@@ -265,6 +313,16 @@ class TestCheckExitCodes(unittest.TestCase):
             code, out, _ = run_cli(fixture.root, "--check", "--file", "docs/RULES.md")
             self.assertEqual(code, 1)
             self.assertIn("docs/RULES.md", out)
+
+    def test_check_names_the_imported_file(self):
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"name": "x"})
+            fixture.write("pnpm-lock.yaml", "")
+            fixture.write("AGENTS.md", "Run `npm install`.")
+            fixture.write("CLAUDE.md", "@AGENTS.md\n")
+            code, out, _ = run_cli(fixture.root, "--check", "--file", "CLAUDE.md")
+            self.assertEqual(code, 1)
+            self.assertIn("CLAUDE.md (and AGENTS.md, which it imports)", out)
 
     def test_check_json_output(self):
         with FixtureRepo() as fixture:
