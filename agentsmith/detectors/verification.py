@@ -5,7 +5,10 @@ actually check, which is the thing that determines whether a change is
 mergeable. When the two differ — a typecheck step in CI that no local script
 runs — the agent hands back work that fails five minutes later.
 
-So this detector reads the workflow files and extracts the real commands.
+So this detector reads the workflow files and extracts the real commands —
+from the workflows that run on a change, not from the nightly cron job or the
+manual release button (see :mod:`agentsmith.ci` for why that distinction is
+the whole point).
 """
 
 from __future__ import annotations
@@ -13,33 +16,25 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
+from ..ci import INTERESTING_RE, gate_commands
 from ..evidence import Confidence, Evidence, Finding
 from ..repo import Repo
 
 SECTION = "Verification"
-
-#: Commands worth surfacing. Checkout, setup, and cache steps are noise.
-INTERESTING_RE = re.compile(
-    r"\b("
-    r"npm|pnpm|yarn|bun|npx|"
-    r"pytest|python|ruff|black|mypy|flake8|tox|"
-    r"go\s+(test|build|vet)|cargo\s+(test|build|clippy|fmt)|"
-    r"bundle\s+exec|rspec|rubocop|"
-    r"gradlew|mvn|swift\s+(test|build)|"
-    r"make|just|task"
-    r")\b"
-)
-
-NOISE_RE = re.compile(
-    r"\b(actions/checkout|setup-node|setup-python|cache|upload-artifact|"
-    r"download-artifact|codecov|echo|apt-get|brew install)\b"
-)
 
 HOOK_FILES = (
     (".husky/pre-commit", "Husky pre-commit hook"),
     (".husky/pre-push", "Husky pre-push hook"),
     (".pre-commit-config.yaml", "pre-commit framework"),
     (".githooks/pre-commit", "Repository git hook"),
+)
+
+#: Matrix keys that pin a language version, and how to label their values.
+VERSION_KEYS = (
+    ("python-version", ""),
+    ("python", ""),
+    ("node-version", "node "),
+    ("node", "node "),
 )
 
 
@@ -57,84 +52,107 @@ def detect(repo: Repo) -> List[Finding]:
     return findings
 
 
-def _workflow_files(repo: Repo) -> List[str]:
-    return [
-        path
-        for path in repo.files()
-        if path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml"))
-    ]
-
-
 def _ci_commands(repo: Repo) -> Optional[Finding]:
-    workflows = _workflow_files(repo)
-    if not workflows:
+    scan = gate_commands(repo)
+    if not scan.workflows:
         return _other_ci(repo)
 
-    commands: List[str] = []
-    seen = set()
-    for path in workflows:
-        text = repo.read(path)
-        if not text:
-            continue
-        for raw in text.splitlines():
-            line = raw.strip()
-            if not line.startswith(("- run:", "run:", "-   run:")):
-                continue
-            command = line.split("run:", 1)[1].strip()
-            command = command.strip("|>-").strip()
-            if not command or command in ("|", ">"):
-                continue
-            if NOISE_RE.search(command) or not INTERESTING_RE.search(command):
-                continue
-            if len(command) > 120:
-                command = command[:117] + "..."
-            if command in seen:
-                continue
-            seen.add(command)
-            commands.append(command)
+    gating = [w for w in scan.workflows if w.gating]
+    if not gating:
+        return _no_gating_workflow(repo, scan)
 
-    if not commands:
+    checks = [c for c in scan.commands if c.kind == "check"]
+    setup = [c for c in scan.commands if c.kind == "setup"]
+    if not checks:
         return None
 
-    listed = "\n".join("- `%s`" % command for command in commands[:12])
-    matrix = _python_matrix(repo, workflows)
+    listed = "\n".join("- %s" % command.render() for command in checks[:12])
     rule = (
-        "CI runs these commands. Work is not done until they pass locally:\n\n" + listed
+        "CI checks changes with these commands. Work is not done until they "
+        "pass locally:\n\n" + listed
     )
+    if setup:
+        rule += "\n\nBefore the checks, CI sets up with %s." % _and(
+            [command.render() for command in setup[:5]]
+        )
+    matrix = _version_matrix(scan.matrices)
     if matrix:
         rule += "\n\n" + matrix
+    opaque = sorted({workflow for workflow, _ in scan.opaque})
+    if opaque:
+        rule += (
+            "\n\nCI also runs steps that are shell scripts or depend on "
+            "workflow expressions, so they are not reproduced here — read %s "
+            "for those." % _and(["`%s`" % path for path in opaque])
+        )
 
+    skipped = [w.path for w in scan.workflows if not w.gating]
+    evidence = [
+        Evidence(
+            "GitHub Actions workflows",
+            "%d check(s) and %d setup step(s) from %d workflow(s) that run on "
+            "push or pull request" % (len(checks), len(setup), len(gating)),
+            samples=[w.path for w in gating][:4],
+        )
+    ]
+    if skipped:
+        evidence.append(
+            Evidence(
+                "GitHub Actions workflows",
+                "%d workflow(s) ignored because they only run on a schedule, "
+                "manual dispatch, tags, or could not be parsed" % len(skipped),
+                samples=skipped[:4],
+            )
+        )
     return Finding(
         key="ci-commands",
         section=SECTION,
         rule=rule,
         confidence=Confidence.CERTAIN,
+        evidence=evidence,
+    )
+
+
+def _no_gating_workflow(repo: Repo, scan) -> Optional[Finding]:
+    """Workflows exist, but none of them runs on a change.
+
+    Worth saying, because an agent will otherwise assume CI is a safety net.
+    Not said when a workflow could not be parsed — it might have been the gate.
+    """
+    other = _other_ci(repo)
+    if other:
+        return other
+    if any(not w.parsed for w in scan.workflows):
+        return None
+    count = len(scan.workflows)
+    return Finding(
+        key="ci-not-gating",
+        section=SECTION,
+        rule=(
+            "No GitHub Actions workflow here runs on push or pull request — "
+            "%s scheduled, manually dispatched, or tag-triggered. Do not "
+            "assume CI will catch a broken change."
+            % ("it is" if count == 1 else "all %d are" % count)
+        ),
+        confidence=Confidence.CERTAIN,
         evidence=[
             Evidence(
                 "GitHub Actions workflows",
-                "%d command(s) extracted from %d workflow file(s)"
-                % (len(commands), len(workflows)),
-                samples=workflows[:4],
+                "Triggers of every workflow file",
+                samples=[w.path for w in scan.workflows][:5],
             )
         ],
     )
 
 
-def _python_matrix(repo: Repo, workflows: List[str]) -> Optional[str]:
-    versions = set()
-    for path in workflows:
-        text = repo.read(path) or ""
-        for match in re.finditer(r"python-version:\s*\[([^\]]+)\]", text):
-            for part in match.group(1).split(","):
-                cleaned = part.strip().strip("\"'")
-                if re.match(r"^\d+\.\d+$", cleaned):
-                    versions.add(cleaned)
-        for match in re.finditer(r"node-version:\s*\[([^\]]+)\]", text):
-            for part in match.group(1).split(","):
-                cleaned = part.strip().strip("\"'")
-                if re.match(r"^\d+", cleaned):
-                    versions.add("node " + cleaned)
-
+def _version_matrix(matrices) -> Optional[str]:
+    versions = []
+    for key, prefix in VERSION_KEYS:
+        for value in matrices.get(key) or []:
+            if re.match(r"^\d+(\.\d+)*(\.x)?$", value):
+                label = prefix + value
+                if label not in versions:
+                    versions.append(label)
     if not versions:
         return None
     ordered = sorted(versions, key=_version_key)
@@ -142,6 +160,12 @@ def _python_matrix(repo: Repo, workflows: List[str]) -> Optional[str]:
         "CI runs a matrix across %s — do not use syntax unavailable on the "
         "oldest of these." % ", ".join(ordered)
     )
+
+
+def _and(items: List[str]) -> str:
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
 
 
 def _version_key(value: str):
@@ -218,9 +242,10 @@ def _hooks(repo: Repo) -> Optional[Finding]:
         key="hooks",
         section=SECTION,
         rule=(
-            "Pre-commit tooling is installed (%s). It will reformat or reject "
-            "the commit — run the formatter first rather than being surprised "
-            "by a hook rewriting your files." % ", ".join(sorted(set(found)))
+            "Commit hooks are configured (%s). Once installed they can "
+            "reformat files or reject a commit — run the formatters and "
+            "linters first rather than being surprised by a hook."
+            % ", ".join(sorted(set(found)))
         ),
         confidence=Confidence.CERTAIN,
         evidence=details,

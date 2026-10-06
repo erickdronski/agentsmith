@@ -114,6 +114,11 @@ def _framework(repo: Repo, test_files: List[str]) -> Optional[Finding]:
                 found.append((name, marker))
                 break
 
+    if not any(name == "pytest" for name, _ in found):
+        pytest_config = _pytest_config(repo, test_files)
+        if pytest_config:
+            found.append(("pytest", pytest_config))
+
     package = repo.read_json("package.json") or {}
     dev_deps = {}
     for key in ("dependencies", "devDependencies"):
@@ -125,34 +130,7 @@ def _framework(repo: Repo, test_files: List[str]) -> Optional[Finding]:
             found.append((name.lstrip("@").split("/")[0], "package.json"))
 
     if not found:
-        # unittest leaves no config file, so infer it from the imports.
-        python_tests = [p for p in test_files if p.endswith(".py")]
-        if python_tests:
-            samples = repo.sample_text(python_tests, limit=40)
-            uses_unittest = sum(
-                1 for _, text in samples if re.search(r"^import unittest", text, re.M)
-            )
-            uses_pytest = sum(
-                1 for _, text in samples if re.search(r"^import pytest", text, re.M)
-            )
-            if uses_unittest or uses_pytest:
-                winner = "unittest" if uses_unittest >= uses_pytest else "pytest"
-                return Finding(
-                    key="test-framework",
-                    section=SECTION,
-                    rule="Tests run under `%s`." % winner,
-                    confidence=Confidence.STRONG,
-                    evidence=[
-                        Evidence(
-                            "test file imports",
-                            "unittest in %d file(s), pytest in %d"
-                            % (uses_unittest, uses_pytest),
-                            observed=max(uses_unittest, uses_pytest),
-                            total=len(samples),
-                        )
-                    ],
-                )
-        return None
+        return _framework_from_imports(repo, test_files)
 
     primary = found[0]
     extras = [name for name, _ in found[1:]]
@@ -168,6 +146,72 @@ def _framework(repo: Repo, test_files: List[str]) -> Optional[Finding]:
         rule=rule,
         confidence=Confidence.CERTAIN,
         evidence=[Evidence(marker, "Config for %s" % name) for name, marker in found],
+    )
+
+
+def _pytest_config(repo: Repo, test_files: List[str]) -> Optional[str]:
+    """pytest configured inside a shared file, or a conftest.py beside tests."""
+    for filename, section in (
+        ("pyproject.toml", r"^\[tool\.pytest\b"),
+        ("setup.cfg", r"^\[tool:pytest\]"),
+        ("tox.ini", r"^\[pytest\]"),
+    ):
+        if re.search(section, repo.read(filename) or "", re.M):
+            return filename
+    return next((p for p in test_files if p.endswith("/conftest.py")), None)
+
+
+#: Runners that leave no config file behind, recognised by what the test files
+#: import instead.
+IMPORT_MARKERS = (
+    ("unittest", re.compile(r"^(import unittest|from unittest\b)", re.M)),
+    ("pytest", re.compile(r"^(import pytest|from pytest\b)", re.M)),
+    (
+        "node:test",
+        re.compile(r"""(from\s+|require\(\s*)['"]node:test['"]"""),
+    ),
+)
+
+RUNNER_RULES = {
+    "unittest": "Tests run under `unittest`.",
+    "pytest": "Tests run under `pytest`.",
+    "node:test": "Tests run under Node's built-in test runner (`node --test`).",
+}
+
+
+def _framework_from_imports(repo: Repo, test_files: List[str]) -> Optional[Finding]:
+    """Infer the runner from imports, by majority, across every language.
+
+    This used to look at Python test files alone and name a runner if any of
+    them imported one — so a Node project with 191 `node:test` files and one
+    Python helper test was described as running under `unittest`. Counting
+    every test file, and requiring a real majority, is what stops one file
+    from deciding the convention.
+    """
+    samples = repo.sample_text(test_files, limit=200)
+    counts: Dict[str, int] = {}
+    for _path, text in samples:
+        for name, pattern in IMPORT_MARKERS:
+            if pattern.search(text):
+                counts[name] = counts.get(name, 0) + 1
+                break
+    result = dominant(counts, min_sample=4)
+    if not result:
+        return None
+    return Finding(
+        key="test-framework",
+        section=SECTION,
+        rule=RUNNER_RULES[result["value"]],
+        confidence=result["confidence"],
+        evidence=[
+            Evidence(
+                "test file imports",
+                "%s imported" % result["value"],
+                observed=result["observed"],
+                total=result["total"],
+            )
+        ],
+        note=_runners_up_note(result),
     )
 
 

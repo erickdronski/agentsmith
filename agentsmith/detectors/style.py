@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Tuple
 
+from ..ci import expand, gate_commands, script_runner
 from ..evidence import Confidence, Evidence, Finding, dominant
 from ..repo import Repo
 
@@ -31,28 +32,125 @@ PRETTIER_FILES = (
     ".prettierrc.cjs",
 )
 
-LINT_CONFIGS = (
-    (
+
+class Tool:
+    """A linter, formatter, or type checker, and how to recognise it running.
+
+    ``role`` is what the tool does, because the sentence an agent reads has to
+    match: ESLint finds problems, it does not format code, and calling it a
+    formatter tells an agent the wrong thing to expect.
+
+    ``runs`` matches a command (or an expanded script body) that invokes the
+    tool. ``checks`` is the stricter test for formatters: ``black .`` in CI
+    rewrites files and exits 0, so only ``black --check`` means CI rejects
+    unformatted code. A linter fails on findings without any flag, so for a
+    linter ``checks`` is ``None`` and running it is enough.
+    """
+
+    __slots__ = ("actions", "checks", "command", "configs", "name", "role", "runs")
+
+    def __init__(
+        self,
+        name: str,
+        role: str,
+        configs: Tuple[str, ...],
+        runs: str,
+        command: Optional[str],
+        checks: Optional[str] = None,
+        actions: Tuple[str, ...] = (),
+    ) -> None:
+        self.name = name
+        self.role = role
+        self.configs = configs
+        self.runs = re.compile(runs)
+        self.command = command
+        self.checks = re.compile(checks) if checks else None
+        self.actions = actions
+
+
+TOOLS = (
+    Tool(
         "ESLint",
+        "linter",
         (
             ".eslintrc",
             ".eslintrc.json",
             ".eslintrc.js",
             ".eslintrc.cjs",
             ".eslintrc.yml",
+            ".eslintrc.yaml",
             "eslint.config.js",
             "eslint.config.mjs",
+            "eslint.config.cjs",
+            "eslint.config.ts",
         ),
+        r"(?<![\w-])eslint(?![\w-])|\b(next|expo)\s+lint\b|pre-commit hook eslint\b",
+        "npx eslint .",
     ),
-    ("Biome", ("biome.json", "biome.jsonc")),
-    ("Ruff", ("ruff.toml", ".ruff.toml")),
-    ("Black", ()),
-    ("Flake8", (".flake8", "tox.ini")),
-    ("golangci-lint", (".golangci.yml", ".golangci.yaml")),
-    ("RuboCop", (".rubocop.yml",)),
-    ("SwiftLint", (".swiftlint.yml",)),
-    ("Clippy", ("clippy.toml",)),
+    Tool(
+        "Biome",
+        "linter and formatter",
+        ("biome.json", "biome.jsonc"),
+        r"\bbiome\s+(check|ci|lint|format)\b",
+        "npx biome check .",
+        checks=r"\bbiome\s+(ci|check|lint)\b(?!.*--(write|apply))",
+        actions=("biomejs/setup-biome",),
+    ),
+    Tool(
+        "Ruff",
+        "linter",
+        ("ruff.toml", ".ruff.toml"),
+        r"\bruff\s+(check|format)\b|\bruff\s+(?!-)[.\w/]|pre-commit hook ruff",
+        "ruff check .",
+        # `ruff format` without --check rewrites files and exits 0.
+        checks=(
+            r"\bruff\s+check\b|\bruff\s+format\b.*\s--check\b"
+            r"|\bruff\s+(?!format\b|-)[.\w/]|pre-commit hook ruff"
+        ),
+        actions=("astral-sh/ruff-action", "chartboost/ruff-action"),
+    ),
+    Tool(
+        "Black",
+        "formatter",
+        (),
+        r"(?<![\w-])black(?![\w-])|pre-commit hook black\b",
+        "black .",
+        checks=r"(?<![\w-])black\b.*\s--check\b|pre-commit hook black\b",
+        actions=("psf/black",),
+    ),
+    Tool(
+        "Flake8",
+        "linter",
+        (".flake8",),
+        r"\bflake8\b",
+        "flake8",
+    ),
+    Tool(
+        "mypy",
+        "type checker",
+        ("mypy.ini", ".mypy.ini"),
+        r"\b(d?mypy)\b",
+        None,
+    ),
+    Tool(
+        "golangci-lint",
+        "linter",
+        (".golangci.yml", ".golangci.yaml", ".golangci.toml"),
+        r"\bgolangci-lint\s+run\b",
+        "golangci-lint run",
+        actions=("golangci/golangci-lint-action",),
+    ),
+    Tool("RuboCop", "linter", (".rubocop.yml",), r"\brubocop\b", "bundle exec rubocop"),
+    Tool("SwiftLint", "linter", (".swiftlint.yml",), r"\bswiftlint\b", "swiftlint"),
+    Tool("Clippy", "linter", ("clippy.toml",), r"\bcargo\s+clippy\b", "cargo clippy"),
 )
+
+#: Ruff is a linter that also ships a formatter. Whether *this project* formats
+#: with it is a separate fact, and only said when something shows it.
+RUFF_FORMAT_RE = re.compile(r"\bruff\s+format\b|pre-commit hook ruff-format\b")
+
+#: Commands that only report a tool's version or help, not a check.
+TRIVIAL_RE = re.compile(r"\s--(version|help)\b")
 
 
 def detect(repo: Repo) -> List[Finding]:
@@ -77,37 +175,215 @@ def detect(repo: Repo) -> List[Finding]:
 
 
 def _linters(repo: Repo) -> List[Finding]:
-    present: List[Tuple[str, str]] = []
-    for name, files in LINT_CONFIGS:
-        for filename in files:
-            if repo.exists(filename):
-                present.append((name, filename))
-                break
-
-    pyproject = repo.read("pyproject.toml") or ""
-    if "[tool.ruff" in pyproject and not any(n == "Ruff" for n, _ in present):
-        present.append(("Ruff", "pyproject.toml"))
-    if "[tool.black" in pyproject:
-        present.append(("Black", "pyproject.toml"))
-    if "[tool.mypy" in pyproject:
-        present.append(("mypy", "pyproject.toml"))
-
+    present = _configured_tools(repo)
     if not present:
         return []
 
-    return [
-        Finding(
-            key="linters",
-            section=SECTION,
-            rule=(
-                "Linting and formatting are configured: %s. Run them before "
-                "finishing — CI will reject work that has not been formatted."
-                % ", ".join("%s (`%s`)" % (n, f) for n, f in present)
-            ),
-            confidence=Confidence.CERTAIN,
-            evidence=[Evidence(f, "%s configuration" % n) for n, f in present],
-        )
+    scan = gate_commands(repo)
+    expanded = [
+        (command, expand(repo, command.raw, command.working_directory))
+        for command in scan.commands
+        if command.kind == "check"
     ]
+    scripts = _local_scripts(repo)
+
+    findings: List[Finding] = []
+    for tool, config in present:
+        enforced, ran = _ci_runs(tool, expanded, scan.uses)
+        role = tool.role
+        local = _local_command(tool, scripts)
+        extra_local: List[str] = []
+        if tool.name == "Ruff" and _formats_with_ruff(repo, expanded, scripts):
+            role = "linter and formatter"
+            fmt = next(
+                (name for name, body in scripts if RUFF_FORMAT_RE.search(body)), None
+            )
+            extra_local.append(fmt or "ruff format .")
+
+        rule = "%s (%s) is configured in `%s`." % (tool.name, role, config)
+        evidence = [Evidence(config, "%s configuration" % tool.name)]
+        if enforced:
+            rule += " CI runs %s and rejects work that fails %s." % (
+                _and(enforced),
+                "it" if len(enforced) == 1 else "them",
+            )
+            evidence.append(
+                Evidence(
+                    "GitHub Actions workflows",
+                    "a gating step runs %s and fails the build on its findings"
+                    % tool.name,
+                    samples=[_strip_ticks(item) for item in enforced],
+                )
+            )
+        elif ran:
+            # Observed running, but not in a way that fails the build: a
+            # formatter without --check, a `continue-on-error` step. Saying
+            # what runs is a fact; claiming it rejects work would not be.
+            rule += " CI runs %s." % _and(ran)
+            evidence.append(
+                Evidence(
+                    "GitHub Actions workflows",
+                    "a gating step runs %s without failing on its findings" % tool.name,
+                    samples=[_strip_ticks(item) for item in ran],
+                )
+            )
+        rule += _local_sentence([c for c in [local, *extra_local] if c], enforced + ran)
+
+        findings.append(
+            Finding(
+                key="tool-%s" % tool.name.lower(),
+                section=SECTION,
+                rule=rule,
+                confidence=Confidence.CERTAIN,
+                evidence=evidence,
+            )
+        )
+    return findings
+
+
+def _configured_tools(repo: Repo) -> List[Tuple[Tool, str]]:
+    present: List[Tuple[Tool, str]] = []
+    pyproject = repo.read("pyproject.toml") or ""
+    package = repo.read_json("package.json") or {}
+    for tool in TOOLS:
+        config = next((f for f in tool.configs if repo.exists(f)), None)
+        if config is None:
+            config = _embedded_config(repo, tool.name, pyproject, package)
+        if config:
+            present.append((tool, config))
+    return present
+
+
+def _embedded_config(
+    repo: Repo, name: str, pyproject: str, package: dict
+) -> Optional[str]:
+    """Configuration that lives inside a shared file rather than its own.
+
+    A shared file only counts when it has the tool's own section. `tox.ini`
+    exists in plenty of repositories that have never run Flake8, and naming
+    Flake8 as "configured" because tox is present invents a linter.
+    """
+    sections = {
+        "Ruff": r"^\[tool\.ruff\b",
+        "Black": r"^\[tool\.black\b",
+        "mypy": r"^\[tool\.mypy\b",
+    }
+    if name in sections and re.search(sections[name], pyproject, re.M):
+        return "pyproject.toml"
+    if name == "Flake8":
+        for filename in ("setup.cfg", "tox.ini"):
+            if re.search(r"^\[flake8\]", repo.read(filename) or "", re.M):
+                return filename
+    if name == "mypy" and re.search(r"^\[mypy\]", repo.read("setup.cfg") or "", re.M):
+        return "setup.cfg"
+    if name == "ESLint" and isinstance(package.get("eslintConfig"), dict):
+        return "package.json"
+    return None
+
+
+def _ci_runs(tool: Tool, expanded, uses) -> Tuple[List[str], List[str]]:
+    """CI commands that run ``tool``: (enforcing, merely running).
+
+    A command counts if it invokes the tool directly or reaches it through
+    package scripts — `npm run verify` whose script runs `npm run lint` whose
+    script runs `eslint .` is CI enforcing ESLint, and it is reported as
+    `npm run verify` because that is the step a reader can find.
+    """
+    enforced: List[str] = []
+    ran: List[str] = []
+    for command, chain in expanded:
+        hits = [
+            text
+            for text in chain
+            if tool.runs.search(text) and not TRIVIAL_RE.search(text)
+        ]
+        if not hits:
+            continue
+        label = "`%s`" % command.display
+        strict = tool.checks is None or any(tool.checks.search(text) for text in hits)
+        swallowed = any(
+            re.search(r"\|\|\s*(true|:|exit\s+0)\b", text) for text in chain
+        )
+        if command.enforcing and strict and not swallowed:
+            if label not in enforced:
+                enforced.append(label)
+        elif label not in ran:
+            ran.append(label)
+    for _workflow, _step, action, _inputs, enforcing in uses:
+        name = action.split("@", 1)[0]
+        if name not in tool.actions:
+            continue
+        label = "the `%s` action" % name
+        if enforcing and label not in enforced:
+            enforced.append(label)
+        elif not enforcing and label not in ran:
+            ran.append(label)
+    return enforced, ran
+
+
+def _local_scripts(repo: Repo) -> List[Tuple[str, str]]:
+    """(how to run it, what it runs) for each package script, fully expanded."""
+    package = repo.read_json("package.json") or {}
+    scripts = package.get("scripts")
+    if not isinstance(scripts, dict):
+        return []
+    runner = script_runner(repo)
+    out = []
+    for name, body in scripts.items():
+        expanded = " && ".join(expand(repo, str(body)))
+        out.append(("%s %s" % (runner, name), expanded))
+    return out
+
+
+def _local_command(tool: Tool, scripts: List[Tuple[str, str]]) -> Optional[str]:
+    """The project's own way to run a tool, or its standard invocation.
+
+    A script that runs the tool and little else (`lint: eslint .`) is
+    preferred over one that runs it among many (`verify: ... && npm run lint
+    && ...`), because the reader wants the narrowest command that answers
+    "does my change pass this tool". For a formatter, a script that formats is
+    preferred over one that only checks, since fixing is the point.
+    """
+    matches = [
+        (command, body)
+        for command, body in scripts
+        if tool.runs.search(body) and not TRIVIAL_RE.search(body)
+    ]
+    if tool.checks is not None:
+        fixing = [m for m in matches if not re.search(r"\s--check\b", m[1])]
+        matches = fixing or matches
+    if matches:
+        return min(matches, key=lambda m: len(m[1]))[0]
+    return tool.command
+
+
+def _local_sentence(commands: List[str], mentioned: List[str]) -> str:
+    if not commands:
+        return ""
+    if all("`%s`" % c in mentioned for c in commands):
+        # CI's own command is the local one; do not print it twice.
+        return " Run %s before finishing." % ("it" if len(commands) == 1 else "them")
+    return " Run %s before finishing." % _and(["`%s`" % c for c in commands])
+
+
+def _formats_with_ruff(repo: Repo, expanded, scripts) -> bool:
+    pyproject = repo.read("pyproject.toml") or ""
+    if re.search(r"^\[tool\.ruff\.format\]", pyproject, re.M):
+        return True
+    for _command, chain in expanded:
+        if any(RUFF_FORMAT_RE.search(text) for text in chain):
+            return True
+    return any(RUFF_FORMAT_RE.search(body) for _, body in scripts)
+
+
+def _and(items: List[str]) -> str:
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _strip_ticks(text: str) -> str:
+    return text.replace("`", "")
 
 
 def _javascript_style(repo: Repo, files: List[str]) -> List[Finding]:
@@ -258,7 +534,7 @@ def _python_style(repo: Repo, files: List[str]) -> List[Finding]:
             Finding(
                 key="py-type-hints",
                 section=SECTION,
-                rule="Functions carry return type annotations. Match this.",
+                rule="Python functions carry return type annotations. Match this.",
                 confidence=Confidence.STRONG
                 if typed / total >= 0.85
                 else Confidence.LIKELY,
@@ -278,7 +554,7 @@ def _python_style(repo: Repo, files: List[str]) -> List[Finding]:
             Finding(
                 key="py-docstrings",
                 section=SECTION,
-                rule="Modules and functions carry docstrings. Match this.",
+                rule="Python modules and functions carry docstrings. Match this.",
                 confidence=Confidence.STRONG
                 if docstrings / total >= 0.85
                 else Confidence.LIKELY,
@@ -310,7 +586,10 @@ def _line_length(repo: Repo) -> Optional[Finding]:
     return Finding(
         key="py-line-length",
         section=SECTION,
-        rule="Lines are limited to %s characters." % match.group(1),
+        # The formatter's target width, not necessarily a lint error: a
+        # project can set it and still ignore E501.
+        rule="The configured line length is %s characters (`%s` in `pyproject.toml`)."
+        % (match.group(1), match.group(0).strip()),
         confidence=Confidence.CERTAIN,
         evidence=[Evidence("pyproject.toml", match.group(0).strip())],
     )

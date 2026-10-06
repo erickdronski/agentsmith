@@ -152,6 +152,49 @@ class TestTesting(unittest.TestCase):
             found = keys(testing.detect(fixture.repo()))
             self.assertIn("co-located", found["test-location"].rule)
 
+    def test_one_python_file_does_not_name_the_runner(self):
+        """A Node project with one Python helper test is not a unittest project."""
+        node_test = "import test from 'node:test';\ntest('x', () => {});\n"
+        with FixtureRepo() as fixture:
+            fixture.write_many(
+                ["lib/tests/t%d.test.mjs" % i for i in range(12)], node_test
+            )
+            fixture.write("tools/test_helper.py", "import unittest\n")
+            rule = keys(testing.detect(fixture.repo()))["test-framework"].rule
+            self.assertIn("node --test", rule)
+            self.assertNotIn("unittest", rule)
+
+    def test_a_single_import_is_not_a_convention(self):
+        with FixtureRepo() as fixture:
+            fixture.write("tests/test_only.py", "import unittest\n")
+            fixture.write_many(
+                ["tests/test_%d.py" % i for i in range(3)],
+                "def test_x():\n    assert True\n",
+            )
+            self.assertNotIn("test-framework", keys(testing.detect(fixture.repo())))
+
+    def test_pytest_configured_in_pyproject_or_conftest(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                "pyproject.toml", "[tool.pytest.ini_options]\naddopts = '-q'\n"
+            )
+            fixture.write_many(
+                ["tests/test_%d.py" % i for i in range(3)],
+                "def test_x():\n    assert True\n",
+            )
+            self.assertIn(
+                "pytest", keys(testing.detect(fixture.repo()))["test-framework"].rule
+            )
+        with FixtureRepo() as fixture:
+            fixture.write("tests/conftest.py", "")
+            fixture.write_many(
+                ["tests/test_%d.py" % i for i in range(3)],
+                "def test_x():\n    assert True\n",
+            )
+            self.assertIn(
+                "pytest", keys(testing.detect(fixture.repo()))["test-framework"].rule
+            )
+
     def test_absent_suite_is_reported_only_for_code_repos(self):
         with FixtureRepo() as fixture:
             fixture.write_many(["src/%d.ts" % i for i in range(12)], TS_SOURCE)
@@ -336,6 +379,7 @@ class TestVerification(unittest.TestCase):
         with FixtureRepo() as fixture:
             fixture.write(
                 ".github/workflows/ci.yml",
+                "on: [push, pull_request]\n"
                 "jobs:\n"
                 "  test:\n"
                 "    steps:\n"
@@ -354,7 +398,7 @@ class TestVerification(unittest.TestCase):
         with FixtureRepo() as fixture:
             fixture.write(
                 ".github/workflows/ci.yml",
-                "jobs:\n  t:\n    strategy:\n"
+                "on: pull_request\njobs:\n  t:\n    strategy:\n"
                 '      matrix:\n        python-version: ["3.9", "3.10", "3.13"]\n'
                 "    steps:\n      - run: python -m pytest\n",
             )
@@ -372,6 +416,368 @@ class TestVerification(unittest.TestCase):
         with FixtureRepo() as fixture:
             fixture.write("README.md", "# hi")
             self.assertEqual(verification.detect(fixture.repo()), [])
+
+
+def workflow(on, *steps, matrix=None, job_extra=""):
+    """A minimal workflow file: one job, the given `run:` lines as steps."""
+    lines = ["on: %s" % on, "jobs:", "  check:", "    runs-on: ubuntu-latest"]
+    if job_extra:
+        lines.append(job_extra)
+    if matrix:
+        lines += ["    strategy:", "      matrix:"]
+        lines += ["        %s: [%s]" % (key, ", ".join(vals)) for key, vals in matrix]
+    lines += ["    steps:", "      - uses: actions/checkout@v4"]
+    for step in steps:
+        if "\n" in step:
+            lines.append("      - run: |")
+            lines += ["          " + line for line in step.splitlines()]
+        else:
+            lines.append("      - run: %s" % step)
+    return "\n".join(lines) + "\n"
+
+
+class TestVerificationGates(unittest.TestCase):
+    """Only CI that runs on a change may be described as what a change must pass."""
+
+    def rule(self, fixture):
+        return keys(verification.detect(fixture.repo())).get("ci-commands")
+
+    def test_scheduled_workflow_is_not_a_gate(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/nightly.yml",
+                workflow("\n  schedule:\n    - cron: '0 3 * * *'", "npm run refresh"),
+            )
+            found = keys(verification.detect(fixture.repo()))
+            self.assertNotIn("ci-commands", found)
+            self.assertIn("ci-not-gating", found)
+            self.assertIn("No GitHub Actions workflow", found["ci-not-gating"].rule)
+
+    def test_manual_release_workflow_is_not_a_gate(self):
+        """A TestFlight upload button is automation, not a check on changes."""
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/release.yml",
+                workflow("workflow_dispatch", "npm run verify"),
+            )
+            self.assertIsNone(self.rule(fixture))
+
+    def test_tag_only_push_is_not_a_gate(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/release.yml",
+                workflow("\n  push:\n    tags: ['v*']", "python -m build"),
+            )
+            self.assertIsNone(self.rule(fixture))
+
+    def test_gate_commands_ignore_other_workflows(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow("[push, pull_request]", "npm test"),
+            )
+            fixture.write(
+                ".github/workflows/nightly.yml",
+                workflow("\n  schedule:\n    - cron: '0 3 * * *'", "npm run scrape"),
+            )
+            rule = self.rule(fixture).rule
+            self.assertIn("npm test", rule)
+            self.assertNotIn("scrape", rule)
+
+    def test_multi_line_run_blocks_are_read(self):
+        """A lint step written as `run: |` used to be invisible."""
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow("pull_request", "npm run lint\nnpm test"),
+            )
+            rule = self.rule(fixture).rule
+            self.assertIn("`npm run lint`", rule)
+            self.assertIn("`npm test`", rule)
+
+    def test_shell_programs_are_pointed_at_not_reproduced(self):
+        """Splitting a script with a background server and a loop into
+        "commands" would list `next start &` as a check."""
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow(
+                    "pull_request",
+                    "npm run build",
+                    "npx next start &\nfor i in 1 2 3; do curl -sf localhost:3000 && break; done\nnpx playwright test",
+                ),
+            )
+            rule = self.rule(fixture).rule
+            self.assertIn("npm run build", rule)
+            self.assertNotIn("next start", rule)
+            self.assertNotIn("playwright test", rule)
+            self.assertIn("read `.github/workflows/ci.yml`", rule)
+
+
+class TestVerificationExpressions(unittest.TestCase):
+    def rule(self, fixture):
+        return keys(verification.detect(fixture.repo()))["ci-commands"].rule
+
+    def test_literal_matrix_values_are_expanded(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow(
+                    "pull_request",
+                    "npx playwright test --project=${{ matrix.browser }}",
+                    matrix=[("browser", ["chromium", "firefox", "webkit"])],
+                ),
+            )
+            rule = self.rule(fixture)
+            self.assertIn("`npx playwright test --project=<browser>`", rule)
+            self.assertIn("for each of chromium, firefox, webkit", rule)
+            self.assertNotIn("${{", rule)
+
+    def test_single_matrix_value_is_substituted(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow(
+                    "pull_request",
+                    "npm test -- --shard=${{ matrix.shard }}",
+                    matrix=[("shard", ["1"])],
+                ),
+            )
+            self.assertIn("`npm test -- --shard=1`", self.rule(fixture))
+
+    def test_non_matrix_expressions_are_omitted(self):
+        """`${{ inputs.x }}` has no value a reader could type."""
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow(
+                    "pull_request",
+                    "npm test",
+                    "npm run e2e -- --env=${{ inputs.environment }}",
+                ),
+            )
+            rule = self.rule(fixture)
+            self.assertNotIn("${{", rule)
+            self.assertNotIn("e2e", rule.split("read")[0])
+
+    def test_expression_built_matrix_is_not_expanded(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                "on: pull_request\n"
+                "jobs:\n  t:\n    strategy:\n      matrix:\n"
+                "        browser: ${{ fromJSON(inputs.browsers) }}\n"
+                "    steps:\n"
+                "      - run: npm run build\n"
+                "      - run: npx playwright test --project=${{ matrix.browser }}\n",
+            )
+            rule = self.rule(fixture)
+            self.assertNotIn("${{", rule)
+            self.assertNotIn("playwright test", rule.split("read")[0])
+
+    def test_setup_steps_are_not_listed_as_checks(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow(
+                    "pull_request",
+                    "npm ci",
+                    "npx playwright install --with-deps chromium",
+                    "sudo apt-get install -y ffmpeg",
+                    "python -m pip install -e '.[dev]'",
+                    "npm test",
+                ),
+            )
+            rule = self.rule(fixture)
+            checks, _, setup = rule.partition("Before the checks")
+            self.assertIn("npm test", checks)
+            for command in ("npm ci", "playwright install", "apt-get", "pip install"):
+                self.assertNotIn(command, checks)
+                self.assertIn(command, setup)
+
+    def test_version_probes_are_not_checks(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow("pull_request", "node --version", "python -V", "npm test"),
+            )
+            rule = self.rule(fixture)
+            self.assertIn("npm test", rule)
+            self.assertNotIn("--version", rule)
+            self.assertNotIn("python -V", rule)
+
+    def test_checks_whose_failures_are_ignored_say_so(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow("pull_request", "npm test", "npm run e2e || true"),
+            )
+            rule = self.rule(fixture)
+            self.assertIn("`npm run e2e || true` (CI ignores its failures)", rule)
+            self.assertNotIn("`npm test` (CI ignores", rule)
+
+    def test_setup_only_workflow_produces_no_check_list(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml", workflow("pull_request", "npm ci")
+            )
+            self.assertNotIn("ci-commands", keys(verification.detect(fixture.repo())))
+
+    def test_matrix_versions_come_from_gating_jobs_only(self):
+        with FixtureRepo() as fixture:
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow(
+                    "push", "pytest", matrix=[("python-version", ['"3.10"', '"3.12"'])]
+                ),
+            )
+            fixture.write(
+                ".github/workflows/legacy.yml",
+                workflow(
+                    "workflow_dispatch",
+                    "pytest",
+                    matrix=[("python-version", ['"2.7"'])],
+                ),
+            )
+            rule = self.rule(fixture)
+            self.assertIn("3.10, 3.12", rule)
+            self.assertNotIn("2.7", rule)
+
+
+class TestLinterClaims(unittest.TestCase):
+    """CI enforcement is claimed only when a gating step is seen running the tool."""
+
+    def eslint_repo(self, fixture, scripts):
+        fixture.write_json("package.json", {"name": "x", "scripts": scripts})
+        fixture.write("package-lock.json", "{}")
+        fixture.write("eslint.config.mjs", "export default [];")
+
+    def test_configured_but_not_in_ci_claims_no_enforcement(self):
+        """The invented claim from a real audit: ESLint configured, CI runs
+        install, build, audit — and the file said CI rejects unformatted work."""
+        with FixtureRepo() as fixture:
+            self.eslint_repo(fixture, {"lint": "eslint .", "build": "next build"})
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow(
+                    "pull_request",
+                    "npm ci",
+                    "npm run build",
+                    "npm audit --audit-level=high",
+                ),
+            )
+            rule = keys(style.detect(fixture.repo()))["tool-eslint"].rule
+            self.assertIn("ESLint (linter) is configured in `eslint.config.mjs`", rule)
+            self.assertIn("Run `npm run lint` before finishing", rule)
+            self.assertNotIn("CI", rule)
+            self.assertNotIn("format", rule)
+
+    def test_enforcement_through_a_script_chain_is_claimed(self):
+        with FixtureRepo() as fixture:
+            self.eslint_repo(
+                fixture,
+                {
+                    "verify": "npm run typecheck && npm run lint",
+                    "lint": "eslint .",
+                    "typecheck": "tsc",
+                },
+            )
+            fixture.write(
+                ".github/workflows/ci.yml", workflow("pull_request", "npm run verify")
+            )
+            rule = keys(style.detect(fixture.repo()))["tool-eslint"].rule
+            self.assertIn(
+                "CI runs `npm run verify` and rejects work that fails it", rule
+            )
+            self.assertIn("`npm run lint`", rule)
+
+    def test_npm_pre_hooks_count_as_the_chain(self):
+        with FixtureRepo() as fixture:
+            self.eslint_repo(fixture, {"pretest": "eslint .", "test": "vitest run"})
+            fixture.write(
+                ".github/workflows/ci.yml", workflow("pull_request", "npm test")
+            )
+            rule = keys(style.detect(fixture.repo()))["tool-eslint"].rule
+            self.assertIn("CI runs `npm test`", rule)
+
+    def test_lint_in_a_scheduled_workflow_is_not_enforcement(self):
+        with FixtureRepo() as fixture:
+            self.eslint_repo(fixture, {"lint": "eslint ."})
+            fixture.write(
+                ".github/workflows/weekly.yml",
+                workflow("\n  schedule:\n    - cron: '0 3 * * 1'", "npm run lint"),
+            )
+            rule = keys(style.detect(fixture.repo()))["tool-eslint"].rule
+            self.assertNotIn("CI", rule)
+
+    def test_continue_on_error_runs_but_does_not_reject(self):
+        with FixtureRepo() as fixture:
+            self.eslint_repo(fixture, {"lint": "eslint ."})
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow(
+                    "pull_request",
+                    "npm run lint",
+                    job_extra="    continue-on-error: true",
+                ),
+            )
+            rule = keys(style.detect(fixture.repo()))["tool-eslint"].rule
+            self.assertIn("CI runs `npm run lint`.", rule)
+            self.assertNotIn("rejects", rule)
+
+    def test_formatter_without_check_mode_is_not_enforcement(self):
+        """`black .` in CI rewrites files and exits 0."""
+        with FixtureRepo() as fixture:
+            fixture.write("pyproject.toml", "[tool.black]\nline-length = 100\n")
+            fixture.write(".github/workflows/ci.yml", workflow("push", "black ."))
+            rule = keys(style.detect(fixture.repo()))["tool-black"].rule
+            self.assertIn("Black (formatter)", rule)
+            self.assertNotIn("rejects", rule)
+
+    def test_formatter_in_check_mode_is_enforcement(self):
+        with FixtureRepo() as fixture:
+            fixture.write("pyproject.toml", "[tool.black]\nline-length = 100\n")
+            fixture.write(
+                ".github/workflows/ci.yml", workflow("push", "black --check .")
+            )
+            rule = keys(style.detect(fixture.repo()))["tool-black"].rule
+            self.assertIn("rejects work that fails it", rule)
+
+    def test_ruff_is_a_formatter_only_when_something_formats_with_it(self):
+        with FixtureRepo() as fixture:
+            fixture.write("pyproject.toml", "[tool.ruff]\nline-length = 100\n")
+            fixture.write(".github/workflows/ci.yml", workflow("push", "ruff check ."))
+            rule = keys(style.detect(fixture.repo()))["tool-ruff"].rule
+            self.assertIn("Ruff (linter)", rule)
+            self.assertIn("CI runs `ruff check .` and rejects", rule)
+
+        with FixtureRepo() as fixture:
+            fixture.write("pyproject.toml", "[tool.ruff]\nline-length = 100\n")
+            fixture.write(
+                ".github/workflows/ci.yml",
+                workflow("push", "ruff check .", "ruff format --check ."),
+            )
+            rule = keys(style.detect(fixture.repo()))["tool-ruff"].rule
+            self.assertIn("Ruff (linter and formatter)", rule)
+            self.assertIn("ruff format --check .", rule)
+
+    def test_tox_ini_alone_is_not_flake8(self):
+        """tox.ini exists in repositories that have never run Flake8."""
+        with FixtureRepo() as fixture:
+            fixture.write("tox.ini", "[tox]\nenvlist = py39\n")
+            self.assertNotIn("tool-flake8", keys(style.detect(fixture.repo())))
+            fixture.write(
+                "tox.ini", "[tox]\nenvlist = py39\n\n[flake8]\nmax-line-length = 100\n"
+            )
+            fresh = fixture.repo()
+            self.assertIn("tox.ini", keys(style.detect(fresh))["tool-flake8"].rule)
+
+    def test_python_style_rules_name_the_language(self):
+        with FixtureRepo() as fixture:
+            fixture.write_many(["pkg/%d.py" % i for i in range(12)], PY_SOURCE)
+            found = keys(style.detect(fixture.repo()))
+            self.assertTrue(found["py-docstrings"].rule.startswith("Python "))
+            self.assertTrue(found["py-type-hints"].rule.startswith("Python "))
 
 
 class TestFileListing(unittest.TestCase):
