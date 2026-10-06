@@ -111,6 +111,32 @@ class TestRender(unittest.TestCase):
         output = render_markdown([finding(confidence=Confidence.LIKELY)], "repo")
         self.assertIn("Do the thing.", output)
 
+    def test_no_double_blank_lines(self):
+        """markdownlint MD012: generated output used to have two blank lines
+        after every section, and before the footer."""
+        output = render_markdown(
+            [
+                finding(key="a", section="Stack", rule="One."),
+                finding(key="b", section="Commands", rule="Two:\n\n- `x`\n- `y`"),
+                finding(key="c", section="Commands", rule="Three."),
+            ],
+            "repo",
+            explain=True,
+        )
+        self.assertNotIn("\n\n\n", output)
+        self.assertTrue(output.endswith(".\n") and not output.endswith("\n\n"))
+
+    def test_footer_does_not_nest_emphasis(self):
+        footer = render_markdown([finding()], "repo").rstrip().splitlines()[-1]
+        self.assertTrue(footer.startswith("_1 rule derived from this repository._ "))
+
+    def test_title_can_be_omitted_for_merging(self):
+        """A block merged into someone's file must not add a second H1."""
+        output = render_markdown([finding()], "repo", title=None)
+        self.assertNotIn("# AGENTS.md", output)
+        self.assertIn("every rule in this block", output)
+        self.assertIn(GENERATED_MARKER, output)
+
     def test_json_shape(self):
         payload = json.loads(render_json([finding()], "repo", "0.1.0"))
         self.assertEqual(payload["tool"], "agentsmith")

@@ -99,6 +99,18 @@ class TestMergePreservesWriting(unittest.TestCase):
         twice = merge(once, "## Commands\n- Use pnpm.")
         self.assertEqual(once, twice)
 
+    def test_exactly_one_blank_line_before_the_block(self):
+        """The first merge used to leave two blank lines (markdownlint MD012)."""
+        for existing in ("# Notes\nText.", "# Notes\nText.\n", "# Notes\nText.\n\n\n"):
+            result = merge(existing, "## Commands\n- Use pnpm.")
+            self.assertIn("Text.\n\n" + BEGIN_MARKER, result)
+            self.assertNotIn("\n\n\n", result)
+
+    def test_heading_is_not_glued_to_the_marker(self):
+        result = merge("", "## Commands\n- Use pnpm.")
+        self.assertTrue(result.startswith(BEGIN_MARKER + "\n\n## Commands"))
+        self.assertIn("- Use pnpm.\n\n" + END_MARKER, result)
+
     def test_empty_file_gets_just_the_block(self):
         result = merge("", "## Commands\n- Use pnpm.")
         self.assertTrue(result.startswith(BEGIN_MARKER))

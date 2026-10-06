@@ -103,7 +103,9 @@ def merge(existing: str, generated_body: str) -> str:
     ``generated_body`` is the rules markdown *without* markers; they are added
     here so callers cannot forget them.
     """
-    block = "%s\n%s\n%s" % (BEGIN_MARKER, generated_body.strip(), END_MARKER)
+    # Blank lines inside the markers keep the first heading off the comment
+    # line, which markdownlint reads as a heading with no space above it.
+    block = "%s\n\n%s\n\n%s" % (BEGIN_MARKER, generated_body.strip(), END_MARKER)
 
     before, managed, after = split_managed(existing)
 
@@ -111,16 +113,11 @@ def merge(existing: str, generated_body: str) -> str:
         # First merge into a hand-written file: keep every word of it and
         # append the managed block. Appending rather than prepending matters —
         # the human's framing should still be the first thing a reader meets.
-        separator = (
-            ""
-            if existing.endswith("\n\n")
-            else "\n"
-            if existing.endswith("\n")
-            else "\n\n"
-        )
         if not existing.strip():
             return block + "\n"
-        return existing + separator + "\n" + block + "\n"
+        # Exactly one blank line between their text and the block; trailing
+        # blank lines are the only thing normalized, never content.
+        return existing.rstrip("\n") + "\n\n" + block + "\n"
 
     return before + block + after
 
