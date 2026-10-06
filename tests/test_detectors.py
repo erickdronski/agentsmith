@@ -135,7 +135,7 @@ class TestTesting(unittest.TestCase):
             )
             found = keys(testing.detect(fixture.repo()))
             self.assertIn("top-level `tests/`", found["test-location"].rule)
-            self.assertIn("test_name.py", found["test-naming"].rule)
+            self.assertIn("`test_<name>.py`", found["test-naming"].rule)
 
     def test_colocated_tests_are_recognized(self):
         with FixtureRepo() as fixture:

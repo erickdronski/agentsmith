@@ -30,12 +30,12 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Pattern, Sequence, Set, Tuple
 
 from .evidence import Confidence, Finding
 from .repo import Repo
 
-__all__ = ["AGENT_FILES", "Drift", "check"]
+__all__ = ["AGENT_FILES", "Drift", "check", "imports"]
 
 #: Instruction files worth checking, in the order they are looked for.
 AGENT_FILES = (
@@ -44,7 +44,7 @@ AGENT_FILES = (
     ".claude/CLAUDE.md",
     ".github/copilot-instructions.md",
     ".cursorrules",
-    ".cursor/rules",
+    ".cursor/rules/agentsmith.mdc",
 )
 
 PACKAGE_MANAGERS = {
@@ -59,11 +59,39 @@ PACKAGE_MANAGERS = {
 PATH_LIKE = re.compile(
     r"^(?!https?:)(?!.*[\s*?])"
     r"(?=.*[/.])"
-    r"[\w./@-]+"
+    r"[\w./@\[\]-]+"
     r"(\.\w{1,6}|/)$"
 )
 
+#: The same shape, but containing placeholders: `data/<slug>/facts.toml`,
+#: `src/**/*.test.ts`, `docs/{name}.md`. Requires a slash — a bare `*.test.ts`
+#: describes a naming convention, not a file anyone expects to exist.
+PLACEHOLDER_PATH_LIKE = re.compile(r"^(?!https?:)[\w./@<>{}*…\[\]-]+$")
+
+#: Placeholder tokens inside one path segment. `[id]` is deliberately absent:
+#: Next.js, expo-router, and SvelteKit use literal bracketed names, so a
+#: bracketed path is first checked as the real file it usually is.
+PLACEHOLDER_TOKEN = re.compile(
+    r"<[^<>/]+>|\{[^{}/]+\}|\*"
+    r"|(?<![A-Za-z])(?:N{3,}|X{3,}|x{3,}|YYYY(?:-MM(?:-DD)?)?)(?![A-Za-z])"
+)
+
+#: Brackets are tried as a placeholder only after the literal reading fails,
+#: so `docs/[topic].md` still resolves when it was meant as a template. The
+#: cost: a route renamed within the same directory (`[id]` to `[slug]`) is
+#: missed. That miss is accepted — the alternative is reporting every
+#: bracketed template as a missing file.
+BRACKET_TOKEN = re.compile(r"\[[^\[\]/]+\]")
+
+#: A whole segment standing for "some directories here".
+ELLIPSIS_SEGMENTS = frozenset({"**", "...", "…"})
+
 SCRIPT_RE = re.compile(r"\b(?:npm|pnpm|yarn|bun)\s+run\s+([\w:.-]+)")
+
+#: Claude Code's `@path` import, restricted to Markdown files. `@types/node`
+#: and `@alice` are not imports anyone meant, and treating them as such would
+#: report packages and people as missing files.
+IMPORT_RE = re.compile(r"(?<![\w`/@])@((?:\.{0,2}/)?[\w.-]+(?:/[\w.-]+)*\.md)\b", re.I)
 
 
 class Drift:
@@ -97,7 +125,7 @@ class Drift:
 
 def find_agent_file(repo: Repo) -> Optional[str]:
     for candidate in AGENT_FILES:
-        if repo.exists(candidate):
+        if os.path.isfile(repo.path(candidate)):
             return candidate
     return None
 
@@ -107,7 +135,7 @@ def check(
     findings: Sequence[Finding],
     agent_file: Optional[str] = None,
 ) -> Dict[str, object]:
-    """Compare an instruction file against detected reality."""
+    """Compare an instruction file, and the files it imports, against reality."""
     target = agent_file or find_agent_file(repo)
     if target is None:
         return {
@@ -129,12 +157,28 @@ def check(
             "message": "Could not read %s" % target,
         }
 
-    prose = _strip_fences_but_keep_commands(text)
-
     drift: List[Drift] = []
-    drift.extend(_package_manager_drift(repo, text, target))
-    drift.extend(_stale_paths(repo, text, target))
-    drift.extend(_stale_scripts(repo, text, target))
+    documents, missing = _with_imports(repo, target, text)
+    for path, raw in missing:
+        drift.append(
+            Drift(
+                kind="stale",
+                severity="warning",
+                message="%s imports `@%s`, which does not exist." % (path, raw),
+                source=path,
+                suggestion="Update or remove the import.",
+            )
+        )
+
+    index = _ReferenceIndex(repo)
+    for path, body in documents:
+        drift.extend(_package_manager_drift(repo, body, path))
+        drift.extend(_stale_paths(repo, body, path, index))
+        drift.extend(_stale_scripts(repo, body, path))
+
+    # Whether a topic is documented is a question about everything the reader
+    # loads, so a CLAUDE.md that only imports AGENTS.md is judged on both.
+    prose = _strip_fences_but_keep_commands("\n\n".join(body for _, body in documents))
     drift.extend(_undocumented(repo, findings, prose, target))
 
     order = {"error": 0, "warning": 1, "info": 2}
@@ -142,13 +186,68 @@ def check(
 
     return {
         "file": target,
+        "imports": [path for path, _ in documents[1:]],
         "checked": True,
         "drift": [item.to_dict() for item in drift],
         "errors": sum(1 for d in drift if d.severity == "error"),
         "warnings": sum(1 for d in drift if d.severity == "warning"),
         "infos": sum(1 for d in drift if d.severity == "info"),
-        "generated_by_agentsmith": "agentsmith:generated" in text,
+        "generated_by_agentsmith": any(
+            "agentsmith:generated" in body for _, body in documents
+        ),
     }
+
+
+def imports(text: str) -> List[str]:
+    """`@path.md` imports in an instruction file, outside code."""
+    body = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
+    body = re.sub(r"`[^`\n]*`", " ", body)
+    return IMPORT_RE.findall(body)
+
+
+def _with_imports(
+    repo: Repo, target: str, text: str
+) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+    """The file plus everything it imports, and imports that point nowhere.
+
+    Claude Code follows `@path` imports up to five hops deep. A CLAUDE.md that
+    is nothing but `@AGENTS.md` has no rules of its own, so checking it alone
+    would find nothing and report the topics as undocumented — while the file
+    the reader actually gets has all of them.
+    """
+    documents = [(target, _strip_frontmatter(text))]
+    missing: List[Tuple[str, str]] = []
+    seen = {os.path.normpath(target).replace(os.sep, "/")}
+    queue = [(target, text, 0)]
+    while queue:
+        path, body, depth = queue.pop(0)
+        if depth >= 5:
+            continue
+        base = os.path.dirname(path)
+        for raw in imports(body):
+            if raw.startswith("/"):
+                continue  # an absolute path is outside this repository
+            resolved = os.path.normpath(os.path.join(base, raw)).replace(os.sep, "/")
+            if resolved.startswith("..") or resolved in seen:
+                continue
+            seen.add(resolved)
+            imported = repo.read(resolved)
+            if imported is None:
+                missing.append((path, raw))
+                continue
+            documents.append((resolved, _strip_frontmatter(imported)))
+            queue.append((resolved, imported, depth + 1))
+    return documents, missing
+
+
+def _strip_frontmatter(text: str) -> str:
+    """Drop a leading `---` YAML block, as Cursor `.mdc` rules carry.
+
+    The frontmatter describes the rule file to the editor; its `description:`
+    is not an instruction to check, and a glob in `globs:` is not a path.
+    """
+    match = re.match(r"^---[ \t]*\n.*?\n---[ \t]*(\n|$)", text, re.DOTALL)
+    return text[match.end() :] if match else text
 
 
 def _package_manager_drift(repo: Repo, text: str, source: str) -> List[Drift]:
@@ -188,8 +287,39 @@ def _package_manager_drift(repo: Repo, text: str, source: str) -> List[Drift]:
     return out
 
 
-def _stale_paths(repo: Repo, text: str, source: str) -> List[Drift]:
-    """Backticked paths in the file that no longer exist on disk."""
+class _ReferenceIndex:
+    """Every project file and directory, for asking "does this exist anywhere?".
+
+    Built from :meth:`Repo.all_files`, so in a git repository it is what git
+    tracks (plus untracked files that are not ignored), with vendored
+    directories excluded either way.
+    """
+
+    def __init__(self, repo: Repo) -> None:
+        self.files = repo.all_files()
+        self.basenames: Set[str] = {path.rsplit("/", 1)[-1] for path in self.files}
+        self.directories: Set[str] = set()
+        for path in self.files:
+            parts = path.split("/")[:-1]
+            for i in range(1, len(parts) + 1):
+                self.directories.add("/".join(parts[:i]))
+
+    def matches(self, pattern: Pattern[str], directory: bool) -> bool:
+        pool = self.directories if directory else self.files
+        return any(pattern.match(path) for path in pool)
+
+
+def _stale_paths(
+    repo: Repo, text: str, source: str, index: Optional[_ReferenceIndex] = None
+) -> List[Drift]:
+    """Backticked paths in the file that no longer exist on disk.
+
+    Three readings, in order, each tried only when the previous one fails:
+    the literal path; for a bare filename, the same name anywhere in the
+    project ("then run `install.sh`" names a file in `automation/`, it does
+    not claim one at the root); and for a path with placeholders, a glob.
+    """
+    index = index or _ReferenceIndex(repo)
     out: List[Drift] = []
     seen = set()
 
@@ -199,7 +329,14 @@ def _stale_paths(repo: Repo, text: str, source: str) -> List[Drift]:
             continue
         seen.add(candidate)
 
-        if " " in candidate or not PATH_LIKE.match(candidate):
+        if " " in candidate:
+            continue
+        if _has_placeholder(candidate):
+            drift = _stale_pattern(repo, candidate, source, index)
+            if drift:
+                out.append(drift)
+            continue
+        if not PATH_LIKE.match(candidate):
             continue
         # Bare filenames with a dot are usually tool names (`package.json` is
         # a path, `Node.js` is not). Require either a slash or a plausible
@@ -216,7 +353,11 @@ def _stale_paths(repo: Repo, text: str, source: str) -> List[Drift]:
         # A directory the walker excluded still exists; do not report it.
         if os.path.exists(os.path.join(repo.root, probe)):
             continue
+        if "/" not in probe and probe in index.basenames:
+            continue
         if not _is_repo_rooted(repo, probe):
+            continue
+        if BRACKET_TOKEN.search(probe) and _matches_pattern(probe, index):
             continue
 
         out.append(
@@ -259,6 +400,90 @@ def _is_repo_rooted(repo: Repo, probe: str) -> bool:
 
     first = segments[0]
     return os.path.exists(os.path.join(repo.root, first))
+
+
+def _has_placeholder(candidate: str) -> bool:
+    segments = candidate.strip("/").split("/")
+    return any(
+        segment in ELLIPSIS_SEGMENTS or PLACEHOLDER_TOKEN.search(segment)
+        for segment in segments
+    )
+
+
+def _stale_pattern(
+    repo: Repo, candidate: str, source: str, index: _ReferenceIndex
+) -> Optional[Drift]:
+    """A path with placeholders that no longer matches any file.
+
+    Only judged when anchored: it needs a slash, and the literal directories
+    before the first placeholder must hold project files. `<your-repo>/x`
+    and a gitignored `dist/*` are about places this check cannot see, so
+    they are left alone rather than reported.
+    """
+    if "/" not in candidate.strip("/") or not PLACEHOLDER_PATH_LIKE.match(candidate):
+        return None
+    if candidate.startswith(("..", "/", "~")):
+        return None
+    segments = candidate.strip("/").split("/")
+    prefix: List[str] = []
+    for segment in segments:
+        if segment in ELLIPSIS_SEGMENTS or PLACEHOLDER_TOKEN.search(segment):
+            break
+        prefix.append(segment)
+    if not prefix or "/".join(prefix) not in index.directories:
+        return None
+
+    if _matches_pattern(candidate, index):
+        return None
+    return Drift(
+        kind="stale",
+        severity="warning",
+        message="%s references `%s`, but no file matches it." % (source, candidate),
+        source=source,
+        suggestion="Update or remove the reference.",
+    )
+
+
+def _matches_pattern(candidate: str, index: _ReferenceIndex) -> bool:
+    """Does any project file or directory match the path read as a template?"""
+    segments = candidate.strip("/").split("/")
+    for brackets in (False, True):
+        if brackets and not BRACKET_TOKEN.search(candidate):
+            break
+        pattern = _placeholder_regex(segments, brackets)
+        if index.matches(pattern, directory=False) or index.matches(
+            pattern, directory=True
+        ):
+            return True
+    return False
+
+
+def _placeholder_regex(segments: List[str], brackets: bool = False) -> Pattern[str]:
+    tokens = PLACEHOLDER_TOKEN
+    if brackets:
+        tokens = re.compile(
+            "%s|%s" % (PLACEHOLDER_TOKEN.pattern, BRACKET_TOKEN.pattern)
+        )
+    parts: List[str] = []
+    for i, segment in enumerate(segments):
+        last = i == len(segments) - 1
+        if segment in ELLIPSIS_SEGMENTS:
+            parts.append("(?:[^/]+/)*" + ("[^/]+" if last else ""))
+            continue
+        found = list(tokens.finditer(segment))
+        if not found:
+            parts.append(re.escape(segment) + ("" if last else "/"))
+            continue
+        # A segment with a placeholder is a template for a name, and the
+        # words around the placeholder are usually template too:
+        # `NNNN-title.md` means "a numbered ADR", not a file whose name ends
+        # in "-title". Only the extension after the last placeholder is held
+        # fixed — looser than a literal reading, which is the safe direction
+        # for a check whose false positives get it removed from CI.
+        tail = segment[found[-1].end() :]
+        extension = tail[tail.index(".") :] if "." in tail else ""
+        parts.append("[^/]*" + re.escape(extension) + ("" if last else "/"))
+    return re.compile("^" + "".join(parts) + "$")
 
 
 def _stale_scripts(repo: Repo, text: str, source: str) -> List[Drift]:

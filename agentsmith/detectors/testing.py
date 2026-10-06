@@ -259,12 +259,15 @@ def _naming(test_files: List[str]) -> Optional[Finding]:
     counts: Dict[str, int] = {}
     samples: Dict[str, List[str]] = {}
 
+    # Written with `<name>` placeholders, not as `test_name.py`: the latter
+    # reads as a real file, and `--check` rightly reported it as missing from
+    # every repository whose AGENTS.md this tool had just generated.
     patterns = (
-        (re.compile(r"\.test\.[a-z]+$"), "`name.test.ext`"),
-        (re.compile(r"\.spec\.[a-z]+$"), "`name.spec.ext`"),
-        (re.compile(r"(^|/)test_[^/]+\.py$"), "`test_name.py`"),
-        (re.compile(r"_test\.(py|go|rb)$"), "`name_test.ext`"),
-        (re.compile(r"(^|/)[^/]*[Ss]pec\.[a-z]+$"), "`nameSpec.ext`"),
+        (re.compile(r"\.test\.[a-z]+$"), "`<name>.test.<ext>`"),
+        (re.compile(r"\.spec\.[a-z]+$"), "`<name>.spec.<ext>`"),
+        (re.compile(r"(^|/)test_[^/]+\.py$"), "`test_<name>.py`"),
+        (re.compile(r"_test\.(py|go|rb)$"), "`<name>_test.<ext>`"),
+        (re.compile(r"(^|/)[^/]*[Ss]pec\.[a-z]+$"), "`<name>Spec.<ext>`"),
     )
 
     for path in test_files:
