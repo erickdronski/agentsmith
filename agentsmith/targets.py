@@ -107,16 +107,15 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
     half-updated.
     """
     plans: List[Plan] = []
+    resolved_root = _resolved_path(root)
     for name, path in TARGETS:
         if name not in names:
             continue
         item = Plan(name, path)
         full = os.path.join(root, path)
-        resolved = os.path.realpath(full)
+        resolved = _resolved_path(full)
         try:
-            contained = os.path.commonpath(
-                [os.path.realpath(root), resolved]
-            ) == os.path.realpath(root)
+            contained = os.path.commonpath([resolved_root, resolved]) == resolved_root
         except ValueError:
             contained = False
         if not contained:
@@ -128,7 +127,7 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
         if (
             name == "claude"
             and agents_available
-            and resolved == os.path.realpath(agents_path)
+            and resolved == _resolved_path(agents_path)
         ):
             item.summary = "already links to AGENTS.md; left unchanged"
             plans.append(item)
@@ -145,6 +144,19 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
             _plan_rules(item, render)
         plans.append(item)
     return plans
+
+
+def _resolved_path(path: str) -> str:
+    resolved = os.path.realpath(path)
+    # On Windows a dangling link can resolve to a textual target whose parent
+    # still uses an 8.3 name (RUNNER~1). Canonicalize that existing parent too,
+    # so it compares equally with the long repository path before the file is
+    # created. normcase also accounts for Windows' case-insensitive paths.
+    return os.path.normcase(
+        os.path.join(
+            os.path.realpath(os.path.dirname(resolved)), os.path.basename(resolved)
+        )
+    )
 
 
 def _plan_rules(item: Plan, render: Renderer) -> None:

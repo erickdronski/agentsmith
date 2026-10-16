@@ -132,8 +132,8 @@ class TestClaudeTarget(TargetCase):
             os.symlink("AGENTS.md", self.path("CLAUDE.md"))
         except OSError as exc:
             self.skipTest("symlinks unavailable: %s" % exc)
-        code, _, _ = self.run_targets("agents,claude")
-        self.assertEqual(code, 0)
+        code, _, err = self.run_targets("agents,claude")
+        self.assertEqual(code, 0, err)
         self.assertIn("pnpm", self.read("AGENTS.md"))
         self.assertIn("Keep this guidance.", self.read("AGENTS.md"))
         self.assertEqual(imports(self.read("AGENTS.md")), [])
@@ -144,8 +144,8 @@ class TestClaudeTarget(TargetCase):
             os.symlink("AGENTS.md", self.path("CLAUDE.md"))
         except OSError as exc:
             self.skipTest("symlinks unavailable: %s" % exc)
-        code, _, _ = self.run_targets("agents,claude")
-        self.assertEqual(code, 0)
+        code, _, err = self.run_targets("agents,claude")
+        self.assertEqual(code, 0, err)
         self.assertIn("pnpm", self.read("AGENTS.md"))
         self.assertEqual(imports(self.read("AGENTS.md")), [])
 
@@ -208,17 +208,19 @@ class TestAllTargets(TargetCase):
     def test_target_directory_symlink_cannot_write_outside_the_repository(self):
         with FixtureRepo() as outside:
             outside.write("rules/agentsmith.mdc", "Do not change this.\n")
+            outside_path = os.path.join(outside.root, "rules", "agentsmith.mdc")
+            with open(outside_path, "rb") as handle:
+                before = handle.read()
             try:
                 os.symlink(outside.root, self.path(".cursor"), target_is_directory=True)
             except OSError as exc:
                 self.skipTest("symlinks unavailable: %s" % exc)
             code, _, err = self.run_targets("agents,cursor")
-            self.assertEqual(code, 2)
+            self.assertEqual(code, 2, err)
             self.assertIn("outside", err)
             self.assertFalse(os.path.exists(self.path("AGENTS.md")))
-            self.assertEqual(
-                outside.repo().read("rules/agentsmith.mdc"), "Do not change this.\n"
-            )
+            with open(outside_path, "rb") as handle:
+                self.assertEqual(handle.read(), before)
 
     def test_dry_run_shows_everything_and_writes_nothing(self):
         code, out, err = self.run_targets("agents,claude,cursor,copilot", dry_run=True)
