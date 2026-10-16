@@ -364,7 +364,7 @@ own tooling on top.
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -t .   # 216 tests
+python -m unittest discover -s tests -t .   # 220 tests
 ```
 
 Detectors are tested against real repositories built on disk, including real git
