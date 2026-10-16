@@ -1,14 +1,14 @@
 <h1 align="center">agentsmith</h1>
 
-<p align="center"><strong>Your AGENTS.md, mined from what your repo actually does.</strong><br>
+<p align="center"><strong>Repository instructions backed by evidence from your codebase.</strong><br>
 No LLM. No network. No config. Evidence for every rule.</p>
 
 <p align="center">
   <a href="#try-it">Try it</a> ·
-  <a href="#the-part-that-matters-drift">Drift detection</a> ·
+  <a href="#drift-detection">Drift detection</a> ·
   <a href="#one-set-of-rules-every-agent---target">Claude, Cursor, Copilot</a> ·
   <a href="#what-it-detects">What it detects</a> ·
-  <a href="#what-it-refuses-to-do">What it refuses to do</a> ·
+  <a href="#evidence-and-limits">Evidence and limits</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -18,23 +18,32 @@ No LLM. No network. No config. Evidence for every rule.</p>
   <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-174ea6">
   <img alt="Linux macOS Windows" src="https://img.shields.io/badge/tested_on-Linux%20%7C%20macOS%20%7C%20Windows-0f766e">
   <img alt="ruff" src="https://img.shields.io/badge/lint-ruff-d97706">
-  <img alt="216 tests" src="https://img.shields.io/badge/tests-216-6b21a8">
+  <a href="https://github.com/erickdronski/agentsmith/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/erickdronski/agentsmith/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 ---
 
-Everyone hand-writes their `AGENTS.md`. It is accurate for about a week.
+`agentsmith` derives coding-agent instructions from a repository's code,
+configuration, and Git history. It records the evidence behind each rule and
+checks existing instructions for drift as the repository changes.
 
-Then the test directory moves, someone switches to pnpm, a script gets renamed —
-and the file keeps confidently telling your agent to do the old thing. A stale
-instruction file is worse than no instruction file, because an agent will follow
-it straight into a wall and then explain, at length, why that was reasonable.
+Use it to keep package-manager commands, test conventions, generated-file
+boundaries, and CI guidance aligned across the tools your team uses. Mechanical
+rules can be regenerated while hand-written architectural guidance stays intact.
 
-`agentsmith` derives the file from the repository instead. Every rule it writes
-comes from committed code, configuration, or git history, and carries the count
-that produced it.
+| Capability | Practical use |
+|---|---|
+| Generate instructions | Create an evidence-backed starting point for `AGENTS.md` |
+| Check drift | Catch contradictory commands and stale references during review or CI |
+| Preserve team knowledge | Merge generated rules without replacing hand-written sections |
+| Support multiple agents | Write formats for Claude Code, Cursor, Copilot, and `AGENTS.md` readers |
+
+The tool runs locally without an LLM or runtime dependencies. Generated rules
+still need review: observable conventions cannot explain architectural intent.
 
 ## Try it
+
+Requirements: Python 3.9+ and Git for installation from source.
 
 ```bash
 pip install git+https://github.com/erickdronski/agentsmith
@@ -50,8 +59,8 @@ the obvious name there belongs to an unrelated project, so `pip install agentsmi
 would get you someone else's package. When it is published the distribution
 name will be `agentsmith-md`.
 
-No API key. No config file. It runs offline in about a second on a large
-repository, and it never writes anything you did not ask for.
+No API key or configuration file is required. Analysis runs offline; files are
+written only when an output option is supplied. Use `--dry-run` to preview changes.
 
 Real output, from a React Native codebase (an excerpt — Stack, Layout, and
 part of the history section are cut for length):
@@ -119,7 +128,7 @@ sentence that reads like every other generated rule and was false. Only
 workflows that run on push or pull request count as checks now, and when none
 do, the file says that instead.
 
-## The part that matters: drift
+## Drift detection
 
 Generating the file once is a convenience. Keeping it true is the actual
 problem.
@@ -203,7 +212,7 @@ one also reads your source, and reports the gap:
 agent is most likely to conflict on. Nobody writes that down, and it is
 computable in one `git log`.
 
-## What it refuses to do
+## Evidence and limits
 
 The failure mode that would make this tool useless is not missing a convention.
 It is confidently inventing one from four files.
@@ -239,16 +248,15 @@ So:
 
 ## Keep your own writing: `--merge`
 
-The thing that stopped this being adoptable: a team with an existing
-`AGENTS.md` full of hard-won architectural knowledge had two options — overwrite
-it, or don't use the tool. Everyone picked the second.
+Existing instruction files often contain architectural decisions that cannot
+be inferred from source. `--merge` preserves those sections while updating
+the mechanical rules this tool can derive.
 
 ```bash
 agentsmith --out AGENTS.md --merge
 ```
 
-Generated rules go inside a marked block. **Everything outside it is never
-touched**, on any run, forever:
+Generated rules go inside a marked block. **Everything outside it is preserved** when the managed block is updated:
 
 ```markdown
 ## Architecture
@@ -367,8 +375,8 @@ Part of a set of small, standalone tools for working with coding agents:
 | Tool | Job |
 |---|---|
 | [contexttest](https://github.com/erickdronski/contexttest) | A/B tests whether an AGENTS.md change actually helps |
-| [burnrate](https://github.com/erickdronski/burnrate) | Prices what your agent sessions cost, with a hard spend cap |
-| [tripwire](https://github.com/erickdronski/tripwire) | Audits what your agent is allowed to do |
+| [burnrate](https://github.com/erickdronski/burnrate) | Estimates session costs and provides a Claude Code budget guard |
+| [tripwire](https://github.com/erickdronski/tripwire) | Audits local agent configuration and permissions |
 | [gtm-skills](https://github.com/erickdronski/gtm-skills) | Go-to-market skills for agents, on a tested arithmetic engine |
 
 ## License
