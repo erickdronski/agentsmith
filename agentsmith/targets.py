@@ -107,11 +107,31 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
     half-updated.
     """
     plans: List[Plan] = []
+    resolved_root = _resolved_path(root)
     for name, path in TARGETS:
         if name not in names:
             continue
         item = Plan(name, path)
         full = os.path.join(root, path)
+        resolved = _resolved_path(full)
+        try:
+            contained = os.path.commonpath([resolved_root, resolved]) == resolved_root
+        except ValueError:
+            contained = False
+        if not contained:
+            item.error = "%s points outside the repository; nothing was written" % path
+            plans.append(item)
+            continue
+        agents_path = os.path.join(root, "AGENTS.md")
+        agents_available = "agents" in names or os.path.isfile(agents_path)
+        if (
+            name == "claude"
+            and agents_available
+            and resolved == _resolved_path(agents_path)
+        ):
+            item.summary = "already links to AGENTS.md; left unchanged"
+            plans.append(item)
+            continue
         if os.path.exists(full):
             item.existing = _read(full)
             if item.existing is None:
@@ -119,14 +139,24 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
                 plans.append(item)
                 continue
         if name == "claude":
-            agents_available = "agents" in names or os.path.isfile(
-                os.path.join(root, "AGENTS.md")
-            )
             _plan_claude(item, render, agents_available)
         else:
             _plan_rules(item, render)
         plans.append(item)
     return plans
+
+
+def _resolved_path(path: str) -> str:
+    resolved = os.path.realpath(path)
+    # On Windows a dangling link can resolve to a textual target whose parent
+    # still uses an 8.3 name (RUNNER~1). Canonicalize that existing parent too,
+    # so it compares equally with the long repository path before the file is
+    # created. normcase also accounts for Windows' case-insensitive paths.
+    return os.path.normcase(
+        os.path.join(
+            os.path.realpath(os.path.dirname(resolved)), os.path.basename(resolved)
+        )
+    )
 
 
 def _plan_rules(item: Plan, render: Renderer) -> None:
@@ -230,7 +260,7 @@ def _title(name: str, existing: Optional[str]) -> Optional[str]:
 
 
 def _is_agents(path: str) -> bool:
-    return os.path.normpath(path).replace(os.sep, "/").lstrip("./") == "AGENTS.md"
+    return os.path.normpath(path).replace(os.sep, "/") == "AGENTS.md"
 
 
 def _read(path: str) -> Optional[str]:

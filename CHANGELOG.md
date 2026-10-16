@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Preserve `CLAUDE.md` symlinks to the local `AGENTS.md` when writing targets,
+  including a link whose requested `AGENTS.md` does not exist yet. Previously
+  the import could overwrite the generated rules through the link.
+- Refuse target paths that resolve outside the repository before writing any
+  target. Keep parent-directory imports distinct from the local `AGENTS.md`.
+
 ## [0.2.1] — 2026-10-06
 
 ### Fixed

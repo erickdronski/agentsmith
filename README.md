@@ -309,13 +309,17 @@ agentsmith --target agents,claude,cursor,copilot
 Every target goes through the same marker/merge machinery as `--merge`:
 generated content lives between the markers, and **everything outside them is
 never touched** — your existing `CLAUDE.md` keeps every line and gains the
-import. A `CLAUDE.md` that already imports `AGENTS.md` is left alone. All
+import. A `CLAUDE.md` that already imports the local `AGENTS.md`, or is a
+symlink to it, is left alone. An import of `../AGENTS.md` remains separate
+from the local file. All
 targets are planned before any is written, so if one file has malformed
 markers the run refuses and **writes nothing at all**. Running it again
 changes nothing.
 
 `--target` writes each tool's file at its conventional path inside the analyzed
-repository; `--out` writes one file you name, anywhere. They cannot be combined.
+repository. A target that resolves outside the repository through a symlink
+stops the entire run before any target is written. `--out` writes one file you
+name, anywhere. They cannot be combined.
 To keep the extra files honest in CI, check them by name:
 
 ```bash
