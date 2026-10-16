@@ -112,6 +112,27 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
             continue
         item = Plan(name, path)
         full = os.path.join(root, path)
+        resolved = os.path.realpath(full)
+        try:
+            contained = os.path.commonpath(
+                [os.path.realpath(root), resolved]
+            ) == os.path.realpath(root)
+        except ValueError:
+            contained = False
+        if not contained:
+            item.error = "%s points outside the repository; nothing was written" % path
+            plans.append(item)
+            continue
+        agents_path = os.path.join(root, "AGENTS.md")
+        agents_available = "agents" in names or os.path.isfile(agents_path)
+        if (
+            name == "claude"
+            and agents_available
+            and resolved == os.path.realpath(agents_path)
+        ):
+            item.summary = "already links to AGENTS.md; left unchanged"
+            plans.append(item)
+            continue
         if os.path.exists(full):
             item.existing = _read(full)
             if item.existing is None:
@@ -119,9 +140,6 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
                 plans.append(item)
                 continue
         if name == "claude":
-            agents_available = "agents" in names or os.path.isfile(
-                os.path.join(root, "AGENTS.md")
-            )
             _plan_claude(item, render, agents_available)
         else:
             _plan_rules(item, render)
@@ -230,7 +248,7 @@ def _title(name: str, existing: Optional[str]) -> Optional[str]:
 
 
 def _is_agents(path: str) -> bool:
-    return os.path.normpath(path).replace(os.sep, "/").lstrip("./") == "AGENTS.md"
+    return os.path.normpath(path).replace(os.sep, "/") == "AGENTS.md"
 
 
 def _read(path: str) -> Optional[str]:

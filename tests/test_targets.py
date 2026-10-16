@@ -119,6 +119,36 @@ class TestClaudeTarget(TargetCase):
         self.assertEqual(self.read("CLAUDE.md"), before)
         self.assertIn("already imports AGENTS.md", err)
 
+    def test_parent_import_does_not_replace_the_local_import(self):
+        self.fixture.write("AGENTS.md", "# Local rules\n")
+        self.fixture.write("CLAUDE.md", "@../AGENTS.md\n")
+        code, _, _ = self.run_targets("claude")
+        self.assertEqual(code, 0)
+        self.assertEqual(imports(self.read("CLAUDE.md")), ["../AGENTS.md", "AGENTS.md"])
+
+    def test_symlink_to_agents_keeps_the_generated_rules(self):
+        self.fixture.write("AGENTS.md", "# Team rules\n\nKeep this guidance.\n")
+        try:
+            os.symlink("AGENTS.md", self.path("CLAUDE.md"))
+        except OSError as exc:
+            self.skipTest("symlinks unavailable: %s" % exc)
+        code, _, _ = self.run_targets("agents,claude")
+        self.assertEqual(code, 0)
+        self.assertIn("pnpm", self.read("AGENTS.md"))
+        self.assertIn("Keep this guidance.", self.read("AGENTS.md"))
+        self.assertEqual(imports(self.read("AGENTS.md")), [])
+        self.assertTrue(os.path.islink(self.path("CLAUDE.md")))
+
+    def test_dangling_symlink_to_requested_agents_does_not_create_self_import(self):
+        try:
+            os.symlink("AGENTS.md", self.path("CLAUDE.md"))
+        except OSError as exc:
+            self.skipTest("symlinks unavailable: %s" % exc)
+        code, _, _ = self.run_targets("agents,claude")
+        self.assertEqual(code, 0)
+        self.assertIn("pnpm", self.read("AGENTS.md"))
+        self.assertEqual(imports(self.read("AGENTS.md")), [])
+
     def test_malformed_markers_refuse_and_write_nothing_anywhere(self):
         """One unsafe target stops every target, not just itself."""
         self.fixture.write("CLAUDE.md", "%s\nhalf a block\n" % BEGIN_MARKER)
@@ -175,6 +205,21 @@ class TestCopilotTarget(TargetCase):
 
 
 class TestAllTargets(TargetCase):
+    def test_target_directory_symlink_cannot_write_outside_the_repository(self):
+        with FixtureRepo() as outside:
+            outside.write("rules/agentsmith.mdc", "Do not change this.\n")
+            try:
+                os.symlink(outside.root, self.path(".cursor"), target_is_directory=True)
+            except OSError as exc:
+                self.skipTest("symlinks unavailable: %s" % exc)
+            code, _, err = self.run_targets("agents,cursor")
+            self.assertEqual(code, 2)
+            self.assertIn("outside", err)
+            self.assertFalse(os.path.exists(self.path("AGENTS.md")))
+            self.assertEqual(
+                outside.repo().read("rules/agentsmith.mdc"), "Do not change this.\n"
+            )
+
     def test_dry_run_shows_everything_and_writes_nothing(self):
         code, out, err = self.run_targets("agents,claude,cursor,copilot", dry_run=True)
         self.assertEqual(code, 0)
