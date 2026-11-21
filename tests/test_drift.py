@@ -108,6 +108,62 @@ class TestStaleScripts(unittest.TestCase):
                 ]
             )
 
+    def test_script_is_checked_in_each_referenced_package(self):
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"scripts": {"rootonly": "echo root"}})
+            fixture.write_json(
+                "packages/web/package.json", {"scripts": {"build": "tsc"}}
+            )
+            fixture.write_json(
+                "packages/api/package.json", {"scripts": {"test": "vitest"}}
+            )
+            fixture.write(
+                "AGENTS.md",
+                (
+                    "`npm run build` (in `packages/web/`), then `npm run build`.\n"
+                    "`npm run build && npm run rootonly` (in `packages/api/`).\n"
+                ),
+            )
+            errors = [
+                item["message"]
+                for item in kinds(run_check(fixture), "stale")
+                if item["severity"] == "error"
+            ]
+            self.assertEqual(len(errors), 3, errors)
+            self.assertTrue(
+                any("build" in m and "but package.json" in m for m in errors)
+            )
+            for name in ("build", "rootonly"):
+                self.assertTrue(
+                    any(name in m and "packages/api/package.json" in m for m in errors)
+                )
+
+    def test_subdirectory_of_workspace_uses_its_nearest_manifest(self):
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"scripts": {"test": "echo root"}})
+            fixture.write_json(
+                "apps/.frontend/package.json", {"scripts": {"build": "vite build"}}
+            )
+            fixture.write("apps/.frontend/src/index.ts", "export {};")
+            fixture.write(
+                "AGENTS.md", "`npm run build -- --mode=dev` (in `apps/.frontend/src/`)"
+            )
+            self.assertEqual(kinds(run_check(fixture), "stale"), [])
+
+    def test_manifest_without_scripts_still_owns_its_workspace(self):
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"scripts": {"build": "tsc"}})
+            fixture.write_json("packages/web/package.json", {"name": "web"})
+            fixture.write("AGENTS.md", "`npm run build` (in `packages/web/`)")
+            errors = [
+                d
+                for d in kinds(run_check(fixture), "stale")
+                if d["severity"] == "error"
+            ]
+            self.assertEqual(len(errors), 1, errors)
+            self.assertIn("packages/web/package.json", errors[0]["message"])
+            self.assertIn("(none)", errors[0]["suggestion"])
+
 
 class TestStalePaths(unittest.TestCase):
     def test_missing_repo_rooted_path_is_reported(self):

@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List, Optional, Pattern, Sequence, Set, Tuple
+from pathlib import Path
+from typing import Dict, Iterator, List, Optional, Pattern, Sequence, Set, Tuple
 
 from .evidence import Confidence, Finding
 from .repo import Repo
@@ -87,6 +88,8 @@ BRACKET_TOKEN = re.compile(r"\[[^\[\]/]+\]")
 ELLIPSIS_SEGMENTS = frozenset({"**", "...", "…"})
 
 SCRIPT_RE = re.compile(r"\b(?:npm|pnpm|yarn|bun)\s+run\s+([\w:.-]+)")
+# CICommand.render() qualifies a whole command, including arguments and chains.
+SCOPED_COMMAND_RE = re.compile(r"`([^`\n]+)`[ \t]+\(in `([^`\n]+)`\)")
 
 #: Claude Code's `@path` import, restricted to Markdown files. `@types/node`
 #: and `@alice` are not imports anyone meant, and treating them as such would
@@ -490,32 +493,72 @@ def _placeholder_regex(segments: List[str], brackets: bool = False) -> Pattern[s
     return re.compile("^" + "".join(parts) + "$")
 
 
-def _stale_scripts(repo: Repo, text: str, source: str) -> List[Drift]:
-    package = repo.read_json("package.json")
-    if not package:
-        return []
-    scripts = package.get("scripts")
-    if not isinstance(scripts, dict):
-        return []
+def _script_contexts(text: str) -> Iterator[Tuple[str, Optional[str]]]:
+    """Split the document into unqualified text and commands with explicit locations."""
+    start = 0
+    for match in SCOPED_COMMAND_RE.finditer(text):
+        yield text[start : match.start()], None
+        yield match[1], match[2]
+        start = match.end()
+    yield text[start:], None
 
+
+def _script_manifest(repo: Repo, directory: Optional[str]) -> Optional[str]:
+    """Find the nearest package in the specified working directory or its ancestors."""
+    if directory is None:
+        return "package.json"
+    root = Path(repo.root).resolve()
+    try:
+        current = (root / directory).resolve()
+        if not current.is_relative_to(root) or not current.is_dir():
+            return None
+        while True:
+            manifest = current / "package.json"
+            if manifest.is_file():
+                if manifest.resolve().is_relative_to(root):
+                    return manifest.relative_to(root).as_posix()
+                return None
+            if current == root:
+                return None
+            current = current.parent
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _stale_scripts(repo: Repo, text: str, source: str) -> List[Drift]:
     out: List[Drift] = []
     seen = set()
-    for name in SCRIPT_RE.findall(text):
-        if name in seen or name in scripts:
+    for snippet, directory in _script_contexts(text):
+        names = SCRIPT_RE.findall(snippet)
+        if not names:
             continue
-        seen.add(name)
-        out.append(
-            Drift(
-                kind="stale",
-                severity="error",
-                message=(
-                    "%s tells the reader to run `%s`, but package.json defines "
-                    "no such script." % (source, name)
-                ),
-                source=source,
-                suggestion="Available scripts: %s" % ", ".join(sorted(scripts)[:10]),
+        manifest = _script_manifest(repo, directory)
+        if manifest is None:
+            continue
+        package = repo.read_json(manifest)
+        if not isinstance(package, dict):
+            continue
+        scripts = package.get("scripts", {} if directory is not None else None)
+        if not isinstance(scripts, dict):
+            continue
+        for name in names:
+            key = (manifest, name)
+            if key in seen or name in scripts:
+                continue
+            seen.add(key)
+            out.append(
+                Drift(
+                    kind="stale",
+                    severity="error",
+                    message=(
+                        "%s tells the reader to run `%s`, but %s defines "
+                        "no such script." % (source, name, manifest)
+                    ),
+                    source=source,
+                    suggestion="Available scripts: %s"
+                    % (", ".join(sorted(scripts)[:10]) or "(none)"),
+                )
             )
-        )
     return out
 
 

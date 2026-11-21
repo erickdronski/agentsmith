@@ -267,6 +267,52 @@ class TestCheckExitCodes(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("contradiction", out)
 
+    def test_generated_workspace_commands_pass_until_the_workspace_script_changes(self):
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"scripts": {"lint": "echo lint"}})
+            fixture.write_json(
+                "packages/web/package.json", {"scripts": {"build": "tsc"}}
+            )
+            fixture.write(
+                ".github/workflows/ci.yml",
+                (
+                    "on: push\njobs:\n  verify:\n    runs-on: ubuntu-latest\n"
+                    "    defaults:\n      run:\n        working-directory: packages/web\n"
+                    "    steps:\n      - run: npm run build\n"
+                ),
+            )
+            code, instructions, _ = run_cli(fixture.root)
+            self.assertEqual(code, 0)
+            self.assertIn("`npm run build` (in `packages/web/`)", instructions)
+            fixture.write("AGENTS.md", instructions)
+            self.assertEqual(run_cli(fixture.root, "--check")[0], 0)
+
+            fixture.write_json(
+                "packages/web/package.json", {"scripts": {"bundle": "tsc"}}
+            )
+            code, report, _ = run_cli(fixture.root, "--check")
+            self.assertEqual(code, 1)
+            self.assertIn("packages/web/package.json", report)
+            self.assertIn("bundle", report)
+
+    def test_workspace_path_preserves_a_leading_dot_without_a_root_manifest(self):
+        with FixtureRepo() as fixture:
+            fixture.write_json(".web/package.json", {"scripts": {"test": "vitest"}})
+            fixture.write(
+                ".github/workflows/ci.yml",
+                (
+                    "on: push\njobs:\n  verify:\n    runs-on: ubuntu-latest\n"
+                    "    steps:\n      - run: npm run test\n        working-directory: ./.web\n"
+                ),
+            )
+            code, instructions, _ = run_cli(fixture.root)
+            self.assertEqual(code, 0)
+            self.assertIn("`npm run test` (in `.web/`)", instructions)
+            fixture.write("AGENTS.md", instructions)
+            self.assertEqual(run_cli(fixture.root, "--check")[0], 0)
+            fixture.write_json(".web/package.json", {"scripts": {}})
+            self.assertEqual(run_cli(fixture.root, "--check")[0], 1)
+
     def test_clean_file_passes(self):
         with FixtureRepo() as fixture:
             fixture.write_json(
