@@ -15,7 +15,11 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        exclude:
+          - { os: ubuntu-latest, python-version: "3.9" }
         include:
+          # Python 3.9 has hosted binaries for Ubuntu 24.04, not 26.04.
+          - { os: ubuntu-24.04, python-version: "3.9" }
           # Path handling is where a Unix-only assumption hides, so the
           # oldest and newest supported Pythons also run on macOS and Windows.
           - { os: macos-latest, python-version: "3.12" }
