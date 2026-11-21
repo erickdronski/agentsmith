@@ -1,27 +1,14 @@
-<h1 align="center">agentsmith</h1>
+# agentsmith
 
-<p align="center"><strong>Repository instructions backed by evidence from your codebase.</strong><br>
-No LLM. No network. No config. Evidence for every rule.</p>
+Derive coding-agent instructions from repository evidence and detect drift as
+the codebase changes.
 
-<p align="center">
-  <a href="#try-it">Try it</a> ·
-  <a href="#drift-detection">Drift detection</a> ·
-  <a href="#one-set-of-rules-every-agent---target">Claude, Cursor, Copilot</a> ·
-  <a href="#what-it-detects">What it detects</a> ·
-  <a href="#evidence-and-limits">Evidence and limits</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a>
-</p>
+[![CI](https://github.com/erickdronski/agentsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/erickdronski/agentsmith/actions/workflows/ci.yml)
+[![MIT license](https://img.shields.io/badge/license-MIT-101828)](LICENSE)
 
-<p align="center">
-  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-101828">
-  <img alt="zero dependencies" src="https://img.shields.io/badge/dependencies-0-08775c">
-  <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-174ea6">
-  <img alt="Linux macOS Windows" src="https://img.shields.io/badge/tested_on-Linux%20%7C%20macOS%20%7C%20Windows-0f766e">
-  <img alt="ruff" src="https://img.shields.io/badge/lint-ruff-d97706">
-  <a href="https://github.com/erickdronski/agentsmith/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/erickdronski/agentsmith/actions/workflows/ci.yml/badge.svg"></a>
-</p>
-
----
+[Install](#try-it) · [Drift detection](#drift-detection) ·
+[Supported agents](#one-set-of-rules-every-agent---target) ·
+[Evidence and limits](#evidence-and-limits)
 
 `agentsmith` derives coding-agent instructions from a repository's code,
 configuration, and Git history. It records the evidence behind each rule and
