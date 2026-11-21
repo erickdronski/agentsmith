@@ -366,8 +366,6 @@ Part of a set of small, standalone tools for working with coding agents:
 | Tool | Job |
 |---|---|
 | [contexttest](https://github.com/erickdronski/contexttest) | A/B tests whether an AGENTS.md change actually helps |
-| [burnrate](https://github.com/erickdronski/burnrate) | Estimates session costs and provides a Claude Code budget guard |
-| [tripwire](https://github.com/erickdronski/tripwire) | Audits local agent configuration and permissions |
 | [gtm-skills](https://github.com/erickdronski/gtm-skills) | Go-to-market skills for agents, on a tested arithmetic engine |
 
 ## License
