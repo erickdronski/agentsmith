@@ -1,9 +1,12 @@
 # Changelog
 
-## Unreleased
+## [0.2.2] — 2026-11-20
 
 ### Fixed
 
+- Check package scripts in the working directory recorded in generated CI
+  instructions. Missing scripts now identify the relevant package manifest,
+  including in workspaces with their own build and test commands.
 - Preserve `CLAUDE.md` symlinks to the local `AGENTS.md` when writing targets,
   including a link whose requested `AGENTS.md` does not exist yet. Previously
   the import could overwrite the generated rules through the link.

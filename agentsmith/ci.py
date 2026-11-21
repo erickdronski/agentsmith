@@ -150,8 +150,8 @@ class CICommand:
 
     def render(self) -> str:
         text = "`%s`" % self.display
-        directory = (self.working_directory or "").strip("./")
-        if directory:
+        directory = (self.working_directory or "").removeprefix("./").rstrip("/")
+        if directory and directory != ".":
             text += " (in `%s/`)" % directory
         if self.matrix_note:
             text += " — %s" % self.matrix_note
