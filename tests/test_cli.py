@@ -473,6 +473,19 @@ class TestCheckExitCodes(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("No instruction file", out)
 
+    def test_explicit_file_that_cannot_be_read_exits_two(self):
+        """A typo in `--file` must not become a check that always passes."""
+        with FixtureRepo() as fixture:
+            fixture.write("AGENTS.md", "# Rules\n")
+            code, out, _ = run_cli(fixture.root, "--check", "--file", "CLAUDE.MD")
+            self.assertEqual(code, 2)
+            self.assertIn("Could not read CLAUDE.MD", out)
+            code, out, _ = run_cli(
+                fixture.root, "--check", "--file", "CLAUDE.MD", "--format", "json"
+            )
+            self.assertEqual(code, 2)
+            self.assertFalse(json.loads(out)["checked"])
+
     def test_explicit_file_is_honored(self):
         with FixtureRepo() as fixture:
             fixture.write_json("package.json", {"name": "x"})
