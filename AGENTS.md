@@ -29,7 +29,7 @@ Run `agentsmith --check` to find out when this file has drifted from reality.
   - `ruff check --output-format=github .`
   - `ruff format --check --diff .`
 
-  Before the checks, CI sets up with `pip install git+https://github.com/erickdronski/agentsmith`, `pip install .` and `pip install ruff==0.16.3`.
+  Before the checks, CI sets up with `pip install .` and `pip install ruff==0.16.3`.
 
   CI runs a matrix across 3.9, 3.10, 3.11, 3.12, 3.13 — do not use syntax unavailable on the oldest of these.
 
@@ -49,30 +49,30 @@ Run `agentsmith --check` to find out when this file has drifted from reality.
 
 - Python modules and functions carry docstrings. Match this.
 
-- Python functions carry return type annotations. Match this. _(seen in 62% of files)_
-
 ## Layout
 
 - Top-level structure:
 
   - `agentsmith/` — 18 files
-  - `tests/` — 9 files
+  - `tests/` — 10 files
   - `.github/` — 3 files
 
 - Files in `tests/` are named in snake_case.
 
 ## Git and history
 
+- Commit subjects are written in the imperative mood ("Add X", not "Added X"). Median subject length is 60 characters.
+
 - These files change most often, so they are the ones most likely to conflict with concurrent work. Re-read them before editing rather than working from memory:
 
-  - `README.md` — changed in 6 of the last 15 commits
-  - `tests/test_detectors.py` — changed in 5 of the last 15 commits
-  - `pyproject.toml` — changed in 4 of the last 15 commits
-  - `agentsmith/cli.py` — changed in 4 of the last 15 commits
-  - `tests/test_cli.py` — changed in 4 of the last 15 commits
-  - `tests/test_merge.py` — changed in 4 of the last 15 commits
-  - `agentsmith/detectors/testing.py` — changed in 4 of the last 15 commits
-  - `.github/workflows/release.yml` — changed in 3 of the last 15 commits
+  - `README.md` — changed in 13 of the last 28 commits
+  - `tests/test_cli.py` — changed in 7 of the last 28 commits
+  - `agentsmith/drift.py` — changed in 6 of the last 28 commits
+  - `agentsmith/cli.py` — changed in 6 of the last 28 commits
+  - `pyproject.toml` — changed in 6 of the last 28 commits
+  - `.github/workflows/ci.yml` — changed in 5 of the last 28 commits
+  - `CHANGELOG.md` — changed in 5 of the last 28 commits
+  - `tests/test_drift.py` — changed in 5 of the last 28 commits
 
 ---
 

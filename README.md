@@ -23,7 +23,7 @@ rules can be regenerated while hand-written architectural guidance stays intact.
 | Generate instructions | Create an evidence-backed starting point for `AGENTS.md` |
 | Check drift | Catch contradictory commands and stale references during review or CI |
 | Preserve team knowledge | Merge generated rules without replacing hand-written sections |
-| Support multiple agents | Write formats for Claude Code, Cursor, Copilot, and `AGENTS.md` readers |
+| Support multiple agents | Write formats for Claude Code, Gemini CLI, Cursor, Copilot, and `AGENTS.md` readers |
 
 The tool runs locally without an LLM or runtime dependencies. Generated rules
 still need review: observable conventions cannot explain architectural intent.
@@ -38,7 +38,7 @@ agentsmith                    # print to stdout
 agentsmith --out AGENTS.md    # write the file
 agentsmith --explain          # include the evidence for every rule
 agentsmith --out AGENTS.md --merge   # keep your hand-written sections
-agentsmith --target agents,claude,cursor,copilot   # every agent's file, merged
+agentsmith --target agents,claude,cursor,copilot,gemini   # every agent's file, merged
 ```
 
 Installing from git is the supported path today — this is not on PyPI yet, and
@@ -140,15 +140,57 @@ Checked AGENTS.md against the repository.
 2 contradiction(s), 0 stale reference(s), 1 undocumented convention(s).
 ```
 
-Exit code is 1 on contradictions, so it drops straight into CI:
+Exit code is 1 on contradictions, so it drops straight into CI.
+
+### GitHub Action
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- uses: erickdronski/agentsmith@v0
+```
+
+The action installs agentsmith from its own checkout, so the tag you name is
+the code that runs, into a private virtualenv that leaves the job's Python
+alone. It then runs `agentsmith --check`, and a contradiction fails the job.
+Inputs reach the shell only as environment variables, never pasted into the
+script, so a value cannot run as a command. `fetch-depth: 0` matters:
+`actions/checkout` fetches a single commit by default, and the commit
+convention `--check` looks for is derived from git history. A ready-made
+workflow is in
+[`.github/workflows/agentsmith.yml`](.github/workflows/agentsmith.yml).
+
+| Input | Default | Effect |
+|---|---|---|
+| `path` | `.` | repository to check |
+| `file` | first of `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md` | instruction file to check (`--file`); a named file that cannot be read fails the step |
+| `strict` | `false` | `true` also fails on stale references and undocumented conventions |
+| `python-version` | `3.12` | Python that runs agentsmith, 3.9 or newer |
+
+`@v0` follows the 0.x releases; `@v0.3.0` pins one. Without the action, install
+from the repository and run the check yourself:
 
 ```yaml
 - run: pip install git+https://github.com/erickdronski/agentsmith
 - run: agentsmith --check
 ```
 
-A ready-made workflow is in
-[`.github/workflows/agentsmith.yml`](.github/workflows/agentsmith.yml).
+### pre-commit
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/erickdronski/agentsmith
+    rev: v0.3.0
+    hooks:
+      - id: agentsmith-check
+        # args: [--file, CLAUDE.md]   or   args: [--strict]
+```
+
+pre-commit installs the hook from the tagged repository with pip, so it does
+not wait on a PyPI release. The hook checks the whole repository on every
+commit, whichever files are staged.
 
 **Precision is the whole design.** A drift checker that cries wolf gets deleted
 from CI within a week, taking its true findings with it. So contradictions are
@@ -169,8 +211,9 @@ still reported. Each of those is a test in
 this tool generates must pass this tool's own check.
 
 `--check` reads what the agent actually reads. A `CLAUDE.md` that is just
-`@AGENTS.md` is checked through the import (and an import of a missing file is
-reported), and `--file .cursor/rules/x.mdc` skips the frontmatter.
+`@AGENTS.md`, or a `GEMINI.md` that is just `@./AGENTS.md`, is checked through
+the import (and an import of a missing file is reported), and
+`--file .cursor/rules/x.mdc` skips the frontmatter.
 
 ## What it detects
 
@@ -276,14 +319,14 @@ otherwise never be updated again.
 
 ## One set of rules, every agent: `--target`
 
-A team is rarely on one tool. Claude Code reads `CLAUDE.md`, Cursor reads
-`.cursor/rules/*.mdc`, Copilot reads `.github/copilot-instructions.md` — and
-four hand-maintained copies of the same rules drift apart, which is the problem
-this tool exists to remove.
+A team is rarely on one tool. Claude Code reads `CLAUDE.md`, Gemini CLI reads
+`GEMINI.md`, Cursor reads `.cursor/rules/*.mdc`, Copilot reads
+`.github/copilot-instructions.md` — and five hand-maintained copies of the same
+rules drift apart, which is the problem this tool exists to remove.
 
 ```bash
-agentsmith --target agents,claude,cursor,copilot --dry-run   # show, write nothing
-agentsmith --target agents,claude,cursor,copilot
+agentsmith --target agents,claude,cursor,copilot,gemini --dry-run   # show, write nothing
+agentsmith --target agents,claude,cursor,copilot,gemini
 ```
 
 | Target | Writes | What goes in it |
@@ -291,14 +334,21 @@ agentsmith --target agents,claude,cursor,copilot
 | `agents` (default file) | `AGENTS.md` | the generated rules |
 | `claude` | `CLAUDE.md` | an `@AGENTS.md` import, so Claude Code reads the same file instead of a copy. Without an AGENTS.md (existing or requested in the same run) the rules go in directly — an import of a missing file would be a broken instruction |
 | `cursor` | `.cursor/rules/agentsmith.mdc` | the rules, after `description:` / `alwaysApply: true` frontmatter |
-| `copilot` | `.github/copilot-instructions.md` | the rules |
+| `copilot` | `.github/copilot-instructions.md` | the rules, as [repository-wide instructions](https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions) |
+| `gemini` | `GEMINI.md` | an `@./AGENTS.md` import: GEMINI.md is Gemini CLI's [default context file](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md), and `@./` is the [import form it documents](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/memport.md). Without an AGENTS.md the rules go in directly, as for `claude` |
+
+Windsurf has no target of its own. Its rules page,
+docs.windsurf.com/windsurf/cascade/memories, now redirects to
+[docs.devin.ai/desktop/cascade/memories](https://docs.devin.ai/desktop/cascade/memories),
+which reads a root `AGENTS.md` as an always-on rule and lists `.windsurf/rules/`
+as a legacy location, so `--target agents` already reaches it.
 
 Every target goes through the same marker/merge machinery as `--merge`:
 generated content lives between the markers, and **everything outside them is
 never touched** — your existing `CLAUDE.md` keeps every line and gains the
-import. A `CLAUDE.md` that already imports the local `AGENTS.md`, or is a
-symlink to it, is left alone. An import of `../AGENTS.md` remains separate
-from the local file. All
+import. A `CLAUDE.md` or `GEMINI.md` that already imports the local
+`AGENTS.md`, or is a symlink to it, is left alone. An import of `../AGENTS.md`
+remains separate from the local file. All
 targets are planned before any is written, so if one file has malformed
 markers the run refuses and **writes nothing at all**. Running it again
 changes nothing.
@@ -329,9 +379,10 @@ half.
 
 ```
 agentsmith [path]
-  --out, -o FILE        write to one file instead of stdout
+  --out, -o FILE        write to one file instead of stdout, creating missing
+                        directories
   --merge               with --out, rewrite only the managed block
-  --target TOOL         agents, claude, cursor, copilot; repeatable or
+  --target TOOL         agents, claude, cursor, copilot, gemini; repeatable or
                         comma-separated; always merges; not with --out
   --dry-run             with --out or --target, print what would be written
                         and write nothing
@@ -339,7 +390,8 @@ agentsmith [path]
   --explain             include evidence for every rule, as collapsible detail
   --check               report drift in an existing instruction file
   --file FILE           which file to check (default: AGENTS.md, CLAUDE.md, ...);
-                        @imports are followed, .mdc frontmatter is skipped
+                        @imports are followed, .mdc frontmatter is skipped;
+                        exits 2 if the file cannot be read
   --strict              in --check, also fail on stale and undocumented findings
   --min-confidence {certain,strong,likely,weak}
   --skip DETECTOR       skip a detector; repeatable
@@ -351,7 +403,7 @@ own tooling on top.
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -t .   # 225 tests
+python -m unittest discover -s tests -t .   # 253 tests
 ```
 
 Detectors are tested against real repositories built on disk, including real git

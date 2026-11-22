@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.3.0] — 2026-11-22
+
+The drift check runs where teams already gate changes — a GitHub Action and a
+pre-commit hook — and the rules can be written for Gemini CLI.
+
+### Added
+
+- A composite GitHub Action: `uses: erickdronski/agentsmith@v0` runs
+  `agentsmith --check`, with optional `path`, `file`, `strict`, and
+  `python-version` inputs. It installs agentsmith from the action's own
+  checkout into a private virtualenv, passes inputs to the shell only as
+  environment variables, and fails the job on a contradiction. CI runs it on
+  this repository and on a generated repository it has to fail.
+- A pre-commit hook, `agentsmith-check`, in `.pre-commit-hooks.yaml`. It
+  takes no filenames and runs on every commit.
+- `--target gemini` writes `GEMINI.md` with an `@./AGENTS.md` import, the form
+  Gemini CLI documents, or the rules themselves when there is no AGENTS.md.
+  `--check` follows the import, and finds a `GEMINI.md` that is the only
+  instruction file.
+
+### Fixed
+
+- `--out` into a directory that did not exist (`--out docs/agents/AGENTS.md`,
+  `--out .cursor/rules/x.mdc`) crashed with a FileNotFoundError traceback, and
+  `--out` naming a directory with an IsADirectoryError. Missing directories
+  are now created, with or without `--merge`, and `--dry-run` names the one it
+  would create. A directory, a path through an existing file, or an unwritable
+  location exits 2 with one line saying what to fix.
+- `--check --file NAME` exited 0 when NAME could not be read, so a typo in a
+  CI configuration passed forever. It now exits 2.
+
+### Changed
+
+- The sample workflow, `.github/workflows/agentsmith.yml`, uses the action.
+
 ## [0.2.2] — 2026-11-20
 
 ### Fixed
