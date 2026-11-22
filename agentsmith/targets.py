@@ -1,15 +1,17 @@
 """Writing the rules where each coding agent looks for them.
 
 AGENTS.md is read by Codex, Cursor, Copilot's coding agent, and others, but a
-team is rarely on one tool. Claude Code reads CLAUDE.md, Cursor reads
-`.cursor/rules/*.mdc`, Copilot Chat reads `.github/copilot-instructions.md`.
-Generating each of those separately would mean four copies of the same rules
-drifting apart — the exact problem this tool exists to remove.
+team is rarely on one tool. Claude Code reads CLAUDE.md, Gemini CLI reads
+GEMINI.md, Cursor reads `.cursor/rules/*.mdc`, Copilot Chat reads
+`.github/copilot-instructions.md`. Generating each of those separately would
+mean five copies of the same rules drifting apart — the exact problem this
+tool exists to remove.
 
 So every target goes through the same marker/merge machinery as ``--merge``:
 generated rules live between the markers, and everything outside them is
 never touched. And where a tool can import a file instead of duplicating it —
-Claude Code resolves ``@AGENTS.md`` — the target is an import, not a copy.
+Claude Code resolves ``@AGENTS.md``, Gemini CLI ``@./AGENTS.md`` — the target
+is an import, not a copy.
 """
 
 from __future__ import annotations
@@ -24,12 +26,22 @@ from .render import GENERATED_MARKER
 __all__ = ["TARGETS", "Plan", "parse_targets", "plan"]
 
 #: Target name -> conventional path, in the order they are written. AGENTS.md
-#: comes first so that a CLAUDE.md written in the same run can import it.
+#: comes first so that a CLAUDE.md or GEMINI.md written in the same run can
+#: import it.
 TARGETS = (
     ("agents", "AGENTS.md"),
     ("claude", "CLAUDE.md"),
     ("cursor", ".cursor/rules/agentsmith.mdc"),
+    # Repository-wide instructions, applied to every request in the repository:
+    # https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions
+    # (Path-specific `.github/instructions/*.instructions.md` files apply only
+    # to files matching their `applyTo` glob, so they are not a target.)
     ("copilot", ".github/copilot-instructions.md"),
+    # GEMINI.md is Gemini CLI's default context file, sent with every prompt,
+    # and it resolves `@./file.md` imports (relative paths, five levels deep):
+    # https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md
+    # https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/memport.md
+    ("gemini", "GEMINI.md"),
 )
 
 TITLES = {
@@ -37,6 +49,7 @@ TITLES = {
     "claude": "CLAUDE.md",
     "cursor": "Repository conventions",
     "copilot": "Copilot instructions",
+    "gemini": "GEMINI.md",
 }
 
 #: Cursor only applies a rule file whose frontmatter says when to. An
@@ -51,6 +64,16 @@ CLAUDE_IMPORT = """Rules for this repository live in AGENTS.md, which agentsmith
 the code and checks for drift. Claude Code reads them through this import:
 
 @AGENTS.md"""
+
+#: Gemini CLI's documentation writes every relative import with a leading
+#: `./`, so that is the form generated here.
+GEMINI_IMPORT = """Rules for this repository live in AGENTS.md, which agentsmith derives from
+the code and checks for drift. Gemini CLI reads them through this import:
+
+@./AGENTS.md"""
+
+#: Targets that import AGENTS.md rather than repeating its rules.
+IMPORTS = {"claude": CLAUDE_IMPORT, "gemini": GEMINI_IMPORT}
 
 #: (title, check command) -> rendered rules markdown.
 Renderer = Callable[[Optional[str], str], str]
@@ -125,7 +148,7 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
         agents_path = os.path.join(root, "AGENTS.md")
         agents_available = "agents" in names or os.path.isfile(agents_path)
         if (
-            name == "claude"
+            name in IMPORTS
             and agents_available
             and resolved == _resolved_path(agents_path)
         ):
@@ -138,8 +161,8 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
                 item.error = "%s exists but could not be read as UTF-8 text" % path
                 plans.append(item)
                 continue
-        if name == "claude":
-            _plan_claude(item, render, agents_available)
+        if name in IMPORTS:
+            _plan_importer(item, render, agents_available)
         else:
             _plan_rules(item, render)
         plans.append(item)
@@ -170,17 +193,22 @@ def _plan_rules(item: Plan, render: Renderer) -> None:
     _merge_into(item, existing or "", body)
 
 
-def _plan_claude(item: Plan, render: Renderer, agents_available: bool) -> None:
+def _plan_importer(item: Plan, render: Renderer, agents_available: bool) -> None:
+    """CLAUDE.md or GEMINI.md: an import of AGENTS.md, or the rules themselves."""
     existing = item.existing or ""
     if not agents_available:
         # Importing a file that will not exist is worse than duplicating, so
-        # the rules go into CLAUDE.md itself.
-        body = render(_title("claude", existing), "agentsmith --check")
+        # the rules go into the file itself. CLAUDE.md is the file a bare
+        # `--check` finds once AGENTS.md is absent; GEMINI.md has to be named.
+        check = "agentsmith --check"
+        if item.name != "claude":
+            check = "agentsmith --check --file %s" % item.path
+        body = render(_title(item.name, existing), check)
         _merge_into(item, existing, body)
         item.note = (
             "AGENTS.md does not exist and was not requested, so the rules are "
-            "written into CLAUDE.md directly (add --target agents to keep one "
-            "copy and import it)"
+            "written into %s directly (add --target agents to keep one "
+            "copy and import it)" % item.path
         )
         return
 
@@ -196,9 +224,9 @@ def _plan_claude(item: Plan, render: Renderer, agents_available: bool) -> None:
         item.summary = "already imports AGENTS.md; left unchanged"
         return
 
-    body = CLAUDE_IMPORT
+    body = IMPORTS[item.name]
     if not outside.strip():
-        body = "# CLAUDE.md\n\n" + body
+        body = "# %s\n\n%s" % (TITLES[item.name], body)
     _merge_into(item, existing, body)
 
 

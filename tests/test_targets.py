@@ -1,7 +1,7 @@
 """Tests for --target: one set of rules, written where each agent reads them.
 
 The failure mode is the same as merge mode's — destroying somebody's writing —
-multiplied by four files. So every target is tested for preservation, for
+multiplied by five files. So every target is tested for preservation, for
 refusing rather than guessing, and for writing nothing at all when any one
 target cannot be written safely.
 """
@@ -20,6 +20,20 @@ HANDWRITTEN_CLAUDE = """# CLAUDE.md
 
 Never run the migration scripts against production from a laptop.
 """
+
+HANDWRITTEN_GEMINI = """# GEMINI.md
+
+Use the staging project for experiments, never production.
+"""
+
+ALL_TARGETS = "agents,claude,cursor,copilot,gemini"
+ALL_PATHS = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".cursor/rules/agentsmith.mdc",
+    ".github/copilot-instructions.md",
+    "GEMINI.md",
+)
 
 
 class TargetCase(unittest.TestCase):
@@ -54,6 +68,7 @@ class TestParsing(unittest.TestCase):
             parse_targets(["copilot,claude", "agents", "claude"]),
             ["agents", "claude", "copilot"],
         )
+        self.assertEqual(parse_targets(["gemini,agents"]), ["agents", "gemini"])
 
     def test_unknown_values_are_rejected(self):
         with self.assertRaises(ValueError):
@@ -204,6 +219,105 @@ class TestCopilotTarget(TargetCase):
         self.assertTrue(text.rstrip().endswith(END_MARKER))
 
 
+class TestGeminiTarget(TargetCase):
+    def test_new_gemini_md_imports_rather_than_duplicates(self):
+        code, _, err = self.run_targets("agents,gemini")
+        self.assertEqual(code, 0, err)
+        text = self.read("GEMINI.md")
+        self.assertEqual(imports(text), ["./AGENTS.md"])
+        self.assertNotIn("pnpm", text, "rules were duplicated instead of imported")
+        self.assertTrue(text.startswith(BEGIN_MARKER))
+        self.assertIn("# GEMINI.md", text)
+
+    def test_imports_an_existing_agents_md_without_rewriting_it(self):
+        self.fixture.write("AGENTS.md", "# Ours\n\nHand-written.\n")
+        self.run_targets("gemini")
+        self.assertEqual(self.read("AGENTS.md"), "# Ours\n\nHand-written.\n")
+        self.assertEqual(imports(self.read("GEMINI.md")), ["./AGENTS.md"])
+
+    def test_without_agents_md_the_rules_go_into_gemini_md(self):
+        """Importing a file that will not exist would be a broken instruction."""
+        code, _, err = self.run_targets("gemini")
+        self.assertEqual(code, 0)
+        text = self.read("GEMINI.md")
+        self.assertIn("pnpm", text)
+        self.assertEqual(imports(text), [])
+        self.assertFalse(os.path.exists(self.path("AGENTS.md")))
+        self.assertIn("written into GEMINI.md directly", err)
+        # A bare --check would not pick GEMINI.md if another file appears, so
+        # the file names itself.
+        self.assertIn("agentsmith --check --file GEMINI.md", text)
+        code, out, _ = run_cli(self.fixture.root, "--check", "--file", "GEMINI.md")
+        self.assertEqual(code, 0, out)
+
+    def test_handwritten_gemini_md_is_preserved_and_gains_the_import(self):
+        self.fixture.write("GEMINI.md", HANDWRITTEN_GEMINI)
+        self.run_targets("agents,gemini")
+        text = self.read("GEMINI.md")
+        self.assertTrue(text.startswith(HANDWRITTEN_GEMINI.rstrip("\n")))
+        self.assertIn(BEGIN_MARKER, text)
+        self.assertIn("@./AGENTS.md", text)
+        self.assertEqual(text.count("# GEMINI.md"), 1)
+
+    def test_gemini_md_that_already_imports_is_left_alone(self):
+        self.fixture.write("AGENTS.md", "# A\n")
+        self.fixture.write("GEMINI.md", "Project context:\n\n@./AGENTS.md\n")
+        before = self.read("GEMINI.md")
+        _code, _out, err = self.run_targets("gemini")
+        self.assertEqual(self.read("GEMINI.md"), before)
+        self.assertIn("already imports AGENTS.md", err)
+
+    def test_symlink_to_agents_keeps_the_generated_rules(self):
+        self.fixture.write("AGENTS.md", "# Team rules\n\nKeep this guidance.\n")
+        try:
+            os.symlink("AGENTS.md", self.path("GEMINI.md"))
+        except OSError as exc:
+            self.skipTest("symlinks unavailable: %s" % exc)
+        code, _, err = self.run_targets("agents,gemini")
+        self.assertEqual(code, 0, err)
+        self.assertIn("pnpm", self.read("AGENTS.md"))
+        self.assertIn("Keep this guidance.", self.read("AGENTS.md"))
+        self.assertEqual(imports(self.read("AGENTS.md")), [])
+        self.assertTrue(os.path.islink(self.path("GEMINI.md")))
+
+    def test_symlink_outside_the_repository_writes_nothing(self):
+        with FixtureRepo() as outside:
+            outside.write("GEMINI.md", "Do not change this.\n")
+            target = os.path.join(outside.root, "GEMINI.md")
+            try:
+                os.symlink(target, self.path("GEMINI.md"))
+            except OSError as exc:
+                self.skipTest("symlinks unavailable: %s" % exc)
+            code, _, err = self.run_targets("agents,gemini")
+            self.assertEqual(code, 2, err)
+            self.assertIn("outside", err)
+            self.assertFalse(os.path.exists(self.path("AGENTS.md")))
+            with open(target, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), "Do not change this.\n")
+
+    def test_malformed_markers_refuse_and_write_nothing_anywhere(self):
+        self.fixture.write("GEMINI.md", "%s\nhalf a block\n" % BEGIN_MARKER)
+        before = self.read("GEMINI.md")
+        code, _out, err = self.run_targets("agents,claude,gemini")
+        self.assertEqual(code, 2)
+        self.assertEqual(self.read("GEMINI.md"), before)
+        self.assertFalse(os.path.exists(self.path("AGENTS.md")))
+        self.assertFalse(os.path.exists(self.path("CLAUDE.md")))
+        self.assertIn("nothing was written", err)
+
+    def test_check_follows_the_import(self):
+        self.run_targets("agents,gemini")
+        code, out, _ = run_cli(self.fixture.root, "--check", "--file", "GEMINI.md")
+        self.assertEqual(code, 0, out)
+        self.assertIn("GEMINI.md (and AGENTS.md, which it imports)", out)
+
+    def test_bare_check_finds_a_lone_gemini_md(self):
+        self.fixture.write("GEMINI.md", "Install with `npm install`.\n")
+        code, out, _ = run_cli(self.fixture.root, "--check")
+        self.assertEqual(code, 1, out)
+        self.assertIn("GEMINI.md says to use `npm`", out)
+
+
 class TestAllTargets(TargetCase):
     def test_target_directory_symlink_cannot_write_outside_the_repository(self):
         with FixtureRepo() as outside:
@@ -223,53 +337,31 @@ class TestAllTargets(TargetCase):
                 self.assertEqual(handle.read(), before)
 
     def test_dry_run_shows_everything_and_writes_nothing(self):
-        code, out, err = self.run_targets("agents,claude,cursor,copilot", dry_run=True)
+        code, out, err = self.run_targets(ALL_TARGETS, dry_run=True)
         self.assertEqual(code, 0)
-        for path in (
-            "AGENTS.md",
-            "CLAUDE.md",
-            ".cursor/rules/agentsmith.mdc",
-            ".github/copilot-instructions.md",
-        ):
+        for path in ALL_PATHS:
             self.assertFalse(os.path.exists(self.path(path)), path)
             self.assertIn("==> %s <==" % path, out)
             self.assertIn("%s: would create" % path, err)
 
     def test_second_run_changes_nothing(self):
-        self.run_targets("agents,claude,cursor,copilot")
-        first = {
-            p: self.read(p)
-            for p in (
-                "AGENTS.md",
-                "CLAUDE.md",
-                ".cursor/rules/agentsmith.mdc",
-                ".github/copilot-instructions.md",
-            )
-        }
-        _code, _out, err = self.run_targets("agents,claude,cursor,copilot")
+        self.run_targets(ALL_TARGETS)
+        first = {p: self.read(p) for p in ALL_PATHS}
+        _code, _out, err = self.run_targets(ALL_TARGETS)
         for path, text in first.items():
             self.assertEqual(self.read(path), text, path)
-        self.assertEqual(err.count("already up to date"), 4)
+        self.assertEqual(err.count("already up to date"), len(ALL_PATHS))
 
     def test_output_has_no_double_blank_lines(self):
         self.fixture.write("CLAUDE.md", HANDWRITTEN_CLAUDE)
-        self.run_targets("agents,claude,cursor,copilot")
-        for path in (
-            "AGENTS.md",
-            "CLAUDE.md",
-            ".cursor/rules/agentsmith.mdc",
-            ".github/copilot-instructions.md",
-        ):
+        self.fixture.write("GEMINI.md", HANDWRITTEN_GEMINI)
+        self.run_targets(ALL_TARGETS)
+        for path in ALL_PATHS:
             self.assertNotIn("\n\n\n", self.read(path), path)
 
     def test_every_target_passes_its_own_check(self):
-        self.run_targets("agents,claude,cursor,copilot")
-        for path in (
-            "AGENTS.md",
-            "CLAUDE.md",
-            ".cursor/rules/agentsmith.mdc",
-            ".github/copilot-instructions.md",
-        ):
+        self.run_targets(ALL_TARGETS)
+        for path in ALL_PATHS:
             code, out, _ = run_cli(self.fixture.root, "--check", "--file", path)
             self.assertEqual(code, 0, out)
 
