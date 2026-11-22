@@ -9,10 +9,12 @@ import json
 import os
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from unittest import mock
 
 from agentsmith.cli import main
 from agentsmith.detectors import run_all
 from agentsmith.evidence import Confidence, Evidence, Finding
+from agentsmith.merge import BEGIN_MARKER
 from agentsmith.render import GENERATED_MARKER, render_json, render_markdown
 
 from .fixtures import FixtureRepo
@@ -255,6 +257,126 @@ class TestCLI(unittest.TestCase):
         code, _, err = run_cli("/nonexistent/path/xyz")
         self.assertEqual(code, 2)
         self.assertIn("error", err)
+
+
+class TestOutPaths(unittest.TestCase):
+    """`--out` into a directory that does not exist yet crashed with a
+    FileNotFoundError traceback, and `--out` naming a directory with an
+    IsADirectoryError. Missing directories are now created, as `--target`
+    creates `.cursor/rules/`; an impossible path is one line and exit 2."""
+
+    def setUp(self):
+        self.fixture = FixtureRepo()
+        self.addCleanup(self.fixture.cleanup)
+        self.fixture.write_json("package.json", {"name": "x"})
+        self.fixture.write("pnpm-lock.yaml", "")
+
+    def path(self, *parts):
+        return os.path.join(self.fixture.root, *parts)
+
+    def in_repo(self):
+        """Run from inside the fixture, as `agentsmith --out x` is typed."""
+        previous = os.getcwd()
+        os.chdir(self.fixture.root)
+        self.addCleanup(os.chdir, previous)
+
+    def assert_one_line_error(self, code, err, fragment):
+        self.assertEqual(code, 2, err)
+        self.assertIn(fragment, err)
+        self.assertTrue(err.startswith("error: "), err)
+        self.assertEqual(err.count("\n"), 1, err)
+        self.assertNotIn("Traceback", err)
+
+    def test_out_creates_missing_directories(self):
+        self.in_repo()
+        code, _, err = run_cli(".", "--out", "no/such/dir/AGENTS.md")
+        self.assertEqual(code, 0, err)
+        with open(self.path("no", "such", "dir", "AGENTS.md"), encoding="utf-8") as h:
+            self.assertIn("pnpm", h.read())
+        self.assertIn("wrote no/such/dir/AGENTS.md", err)
+
+    def test_out_creates_a_cursor_rules_directory(self):
+        self.in_repo()
+        code, _, err = run_cli(".", "--out", ".cursor/rules/x.mdc")
+        self.assertEqual(code, 0, err)
+        self.assertTrue(os.path.isfile(self.path(".cursor", "rules", "x.mdc")))
+
+    def test_merge_creates_missing_directories(self):
+        target = self.path("docs", "agents", "AGENTS.md")
+        code, _, err = run_cli(self.fixture.root, "--out", target, "--merge")
+        self.assertEqual(code, 0, err)
+        with open(target, encoding="utf-8") as handle:
+            self.assertTrue(handle.read().startswith(BEGIN_MARKER))
+
+    def test_out_outside_the_repository_creates_directories(self):
+        with FixtureRepo() as elsewhere:
+            target = os.path.join(elsewhere.root, "a", "b", "AGENTS.md")
+            for extra in ([], ["--merge"]):
+                code, _, err = run_cli(self.fixture.root, "--out", target, *extra)
+                self.assertEqual(code, 0, err)
+                self.assertTrue(os.path.isfile(target))
+
+    def test_dry_run_names_the_directory_and_creates_nothing(self):
+        target = self.path("no", "such", "AGENTS.md")
+        for extra in ([], ["--merge"]):
+            code, out, err = run_cli(
+                self.fixture.root, "--out", target, "--dry-run", *extra
+            )
+            self.assertEqual(code, 0, err)
+            self.assertIn("would create it, and the directory", err)
+            self.assertIn("pnpm", out)
+            self.assertFalse(os.path.exists(self.path("no")))
+
+    def test_a_directory_exits_two_in_every_mode(self):
+        for extra in ([], ["--merge"], ["--dry-run"], ["--merge", "--dry-run"]):
+            code, out, err = run_cli(
+                self.fixture.root, "--out", self.fixture.root, *extra
+            )
+            self.assert_one_line_error(code, err, "is a directory")
+            self.assertIn("AGENTS.md", err, "the error should suggest a file name")
+            self.assertEqual(out, "")
+
+    def test_current_directory_and_trailing_separator_are_directories(self):
+        self.in_repo()
+        code, _, err = run_cli(".", "--out", ".")
+        self.assert_one_line_error(code, err, "--out . is a directory")
+        code, _, err = run_cli(".", "--out", "new" + os.sep)
+        self.assert_one_line_error(code, err, "is a directory")
+        self.assertFalse(os.path.exists(self.path("new")))
+
+    def test_a_file_in_the_way_exits_two(self):
+        target = self.path("package.json", "AGENTS.md")
+        for extra in ([], ["--merge"], ["--dry-run"]):
+            code, _, err = run_cli(self.fixture.root, "--out", target, *extra)
+            self.assert_one_line_error(code, err, "is a file, not a directory")
+
+    @unittest.skipIf(os.name == "nt", "POSIX permission bits")
+    @unittest.skipIf(
+        hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores permissions"
+    )
+    def test_an_unwritable_directory_exits_two(self):
+        locked = self.path("locked")
+        os.mkdir(locked)
+        os.chmod(locked, 0o555)
+        self.addCleanup(os.chmod, locked, 0o755)
+        for target in (
+            os.path.join(locked, "AGENTS.md"),
+            os.path.join(locked, "sub", "AGENTS.md"),
+        ):
+            for extra in ([], ["--merge"], ["--dry-run"]):
+                code, _, err = run_cli(self.fixture.root, "--out", target, *extra)
+                self.assert_one_line_error(code, err, "is not writable")
+        self.assertEqual(os.listdir(locked), [])
+
+    def test_a_failed_write_is_an_error_not_a_traceback(self):
+        """A read-only filesystem or a race gets past the up-front checks."""
+        denied = PermissionError(13, "Permission denied")
+        with mock.patch("agentsmith.cli.open", side_effect=denied, create=True):
+            for extra in ([], ["--merge"]):
+                code, _, err = run_cli(
+                    self.fixture.root, "--out", self.path("AGENTS.md"), *extra
+                )
+                self.assert_one_line_error(code, err, "Permission denied")
 
 
 class TestCheckExitCodes(unittest.TestCase):
