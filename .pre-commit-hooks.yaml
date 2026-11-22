@@ -1,0 +1,14 @@
+# The pre-commit framework reads this file from a hook repository:
+# https://pre-commit.com/#creating-new-hooks
+#
+# The check is about the whole repository, not the files being committed, so
+# it runs on every commit and is given no filenames. Choose another file or
+# fail on stale references too with `args: [--file, CLAUDE.md]` or
+# `args: [--strict]`.
+- id: agentsmith-check
+  name: agentsmith drift check
+  description: Fail when AGENTS.md, or the file named with --file, contradicts the repository.
+  entry: agentsmith --check
+  language: python
+  pass_filenames: false
+  always_run: true
