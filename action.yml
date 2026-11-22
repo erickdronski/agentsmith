@@ -1,0 +1,94 @@
+# Fail a workflow when an agent instruction file contradicts the repository.
+#
+#   - uses: actions/checkout@v4
+#     with:
+#       fetch-depth: 0
+#   - uses: erickdronski/agentsmith@v0
+#
+# agentsmith is installed from this action's own checkout, so the tag a
+# workflow names is exactly the code that runs. Inputs reach the shell only as
+# environment variables expanded inside double quotes: interpolating
+# ${{ inputs.* }} into a script would let a crafted value run as a command.
+name: agentsmith drift check
+description: Fail the job when AGENTS.md or another agent instruction file contradicts the repository. No LLM, no API key.
+author: Erick Dronski
+branding:
+  icon: file-text
+  color: green
+
+inputs:
+  path:
+    description: Repository to check, relative to the workspace.
+    required: false
+    default: "."
+  file:
+    description: >-
+      Instruction file to check, relative to `path` (passed as --file).
+      Defaults to the first of AGENTS.md, CLAUDE.md and .claude/CLAUDE.md
+      that exists. A named file that cannot be read fails the step.
+    required: false
+    default: ""
+  strict:
+    description: Also fail on stale references and undocumented conventions ("true" or "false").
+    required: false
+    default: "false"
+  python-version:
+    description: Python version that runs agentsmith (3.9 or newer).
+    required: false
+    default: "3.12"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python for agentsmith
+      id: python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        # Leave the caller's PATH and default Python untouched; the steps
+        # below call this interpreter by its full path.
+        update-environment: false
+
+    - name: Install agentsmith from the action's checkout
+      id: install
+      shell: bash
+      env:
+        AGENTSMITH_SETUP_PYTHON: ${{ steps.python.outputs.python-path }}
+      run: |
+        # A private virtualenv, so nothing is installed into an interpreter
+        # the rest of the job uses.
+        venv="$RUNNER_TEMP/agentsmith-action-venv"
+        "$AGENTSMITH_SETUP_PYTHON" -m venv "$venv"
+        python="$venv/bin/python"
+        if [ ! -x "$python" ]; then
+          python="$venv/Scripts/python.exe"
+        fi
+        "$python" -m pip install --disable-pip-version-check --quiet "$GITHUB_ACTION_PATH"
+        echo "python=$python" >> "$GITHUB_OUTPUT"
+
+    - name: Check the instruction file against the repository
+      shell: bash
+      env:
+        AGENTSMITH_PYTHON: ${{ steps.install.outputs.python }}
+        AGENTSMITH_INPUT_PATH: ${{ inputs.path }}
+        AGENTSMITH_INPUT_FILE: ${{ inputs.file }}
+        AGENTSMITH_INPUT_STRICT: ${{ inputs.strict }}
+      run: |
+        # -I keeps the checked repository's own files off sys.path.
+        args=(-I -m agentsmith --check)
+        if [ -n "$AGENTSMITH_INPUT_FILE" ]; then
+          args+=("--file=$AGENTSMITH_INPUT_FILE")
+        fi
+        strict="$(printf '%s' "$AGENTSMITH_INPUT_STRICT" | tr '[:upper:]' '[:lower:]')"
+        case "$strict" in
+          true) args+=(--strict) ;;
+          false | "") ;;
+          *)
+            echo "error: the strict input must be true or false" >&2
+            exit 2
+            ;;
+        esac
+        # `--` ends the options, so a path that starts with "-" stays a path.
+        args+=(-- "${AGENTSMITH_INPUT_PATH:-.}")
+        # The exit code is agentsmith's: 1 on contradictions fails the job.
+        "$AGENTSMITH_PYTHON" "${args[@]}"
