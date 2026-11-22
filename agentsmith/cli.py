@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--out",
         "-o",
-        help="write to this one file instead of stdout",
+        help="write to this one file instead of stdout, creating missing directories",
     )
     parser.add_argument(
         "--target",
@@ -175,6 +175,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "rather than --target."
             )
 
+    target = None
+    if args.out and not args.check:
+        target = (
+            args.out if os.path.isabs(args.out) else os.path.join(os.getcwd(), args.out)
+        )
+        # Checked before the analysis, and before --dry-run describes a write
+        # that could never happen.
+        problem = _out_problem(args.out, target)
+        if problem:
+            return _usage_error(problem)
+
     try:
         repo = Repo(args.path)
     except RepoError as exc:
@@ -190,15 +201,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if targets:
         return _write_targets(repo, findings, args, targets)
 
-    target = None
-    if args.out:
-        target = (
-            args.out if os.path.isabs(args.out) else os.path.join(os.getcwd(), args.out)
-        )
-        if args.merge:
-            # The non-destructive path: only the managed block is rewritten, so
-            # there is nothing to warn about.
-            return _write_merged(repo, target, args, findings)
+    if target and args.merge:
+        # The non-destructive path: only the managed block is rewritten, so
+        # there is nothing to warn about.
+        return _write_merged(repo, target, args, findings)
 
     if args.format == "json":
         output = render_json(findings, repo_name, __version__)
@@ -218,8 +224,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             sys.stdout.write(output.rstrip("\n") + "\n")
             return 0
         _warn_on_overwrite(target)
-        with open(target, "w", encoding="utf-8") as handle:
-            handle.write(output.rstrip("\n") + "\n")
+        problem = _write_out(args.out, target, output)
+        if problem:
+            return _usage_error(problem)
         sys.stderr.write(
             "wrote %s — %d rule(s) from %d detector(s)\n"
             % (args.out, len(findings), len(DETECTORS) - len(args.skip))
@@ -239,6 +246,74 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 def _usage_error(message: str) -> int:
     sys.stderr.write("error: %s\n" % message)
     return 2
+
+
+def _out_problem(shown: str, target: str) -> Optional[str]:
+    """Why ``--out`` cannot be written, as one actionable line, or None.
+
+    Missing directories are not a problem: they are created, as ``--target``
+    creates `.cursor/rules/`. A traceback for a mistyped path reads as a bug
+    in this tool, and in CI it buries the one line that says what to fix.
+    """
+    separators = tuple(sep for sep in (os.sep, os.altsep) if sep)
+    if shown.endswith(separators) or os.path.isdir(target):
+        return "--out %s is a directory; name the file to write, e.g. --out %s" % (
+            shown,
+            os.path.join(shown, "AGENTS.md"),
+        )
+    # The nearest ancestor that already exists decides whether the missing
+    # directories below it can be created.
+    ancestor = os.path.dirname(target)
+    while not os.path.exists(ancestor):
+        parent = os.path.dirname(ancestor)
+        if parent == ancestor:
+            break
+        ancestor = parent
+    if os.path.exists(ancestor) and not os.path.isdir(ancestor):
+        return "cannot write --out %s: %s is a file, not a directory" % (
+            shown,
+            _display(ancestor),
+        )
+    if os.path.exists(target):
+        writable = os.access(target, os.W_OK)
+        blocker = target
+    else:
+        writable = os.access(ancestor, os.W_OK | os.X_OK)
+        blocker = ancestor
+    if not writable:
+        return (
+            "cannot write --out %s: %s is not writable; choose another location "
+            "or fix its permissions" % (shown, _display(blocker))
+        )
+    return None
+
+
+def _write_out(shown: str, target: str, text: str) -> Optional[str]:
+    """Write the ``--out`` file, creating missing directories; an error or None."""
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write(text.rstrip("\n") + "\n")
+    except OSError as exc:
+        # _out_problem catches the predictable cases; this is the rest (a
+        # read-only filesystem, a race), reported the same way.
+        return "could not write %s: %s" % (shown, exc.strerror or exc)
+    return None
+
+
+def _missing_directory(target: str) -> Optional[str]:
+    """The directory ``--out`` would have to create, for ``--dry-run``."""
+    parent = os.path.dirname(target)
+    return None if os.path.isdir(parent) else _display(parent)
+
+
+def _display(path: str) -> str:
+    """A path relative to the working directory when it is inside it."""
+    try:
+        relative = os.path.relpath(path)
+    except ValueError:  # another drive on Windows
+        return path
+    return path if relative.startswith("..") else relative
 
 
 def _check_command(repo: Repo, target: Optional[str]) -> str:
@@ -347,14 +422,20 @@ def _write_merged(repo: Repo, target: str, args, findings) -> int:
     warning = legacy_warning(existing, args.out)
 
     if args.dry_run:
-        sys.stderr.write("%s: %s\n" % (args.out, preview(existing, output)))
+        summary = (
+            preview(existing, output)
+            if os.path.exists(target)
+            else _describe_overwrite(target)
+        )
+        sys.stderr.write("%s: %s\n" % (args.out, summary))
         if warning:
             sys.stderr.write("warning: %s\n" % warning)
         sys.stdout.write(merged.rstrip("\n") + "\n")
         return 0
 
-    with open(target, "w", encoding="utf-8") as handle:
-        handle.write(merged.rstrip("\n") + "\n")
+    problem = _write_out(args.out, target, merged)
+    if problem:
+        return _usage_error(problem)
 
     preserved = _preserved_lines(existing) if existing else 0
     sys.stderr.write(
@@ -372,6 +453,9 @@ def _write_merged(repo: Repo, target: str, args, findings) -> int:
 
 def _describe_overwrite(target: str) -> str:
     if not os.path.exists(target):
+        missing = _missing_directory(target)
+        if missing:
+            return "would create it, and the directory %s" % missing
         return "would create it"
     try:
         with open(target, encoding="utf-8") as handle:
