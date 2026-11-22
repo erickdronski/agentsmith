@@ -39,6 +39,7 @@ from .repo import Repo
 __all__ = ["AGENT_FILES", "Drift", "check", "imports"]
 
 #: Instruction files worth checking, in the order they are looked for.
+#: GEMINI.md is last so that adding it changed no existing repository's pick.
 AGENT_FILES = (
     "AGENTS.md",
     "CLAUDE.md",
@@ -46,6 +47,7 @@ AGENT_FILES = (
     ".github/copilot-instructions.md",
     ".cursorrules",
     ".cursor/rules/agentsmith.mdc",
+    "GEMINI.md",
 )
 
 PACKAGE_MANAGERS = {
@@ -91,9 +93,10 @@ SCRIPT_RE = re.compile(r"\b(?:npm|pnpm|yarn|bun)\s+run\s+([\w:.-]+)")
 # CICommand.render() qualifies a whole command, including arguments and chains.
 SCOPED_COMMAND_RE = re.compile(r"`([^`\n]+)`[ \t]+\(in `([^`\n]+)`\)")
 
-#: Claude Code's `@path` import, restricted to Markdown files. `@types/node`
-#: and `@alice` are not imports anyone meant, and treating them as such would
-#: report packages and people as missing files.
+#: The `@path` import Claude Code and Gemini CLI resolve (`@AGENTS.md`,
+#: `@./AGENTS.md`), restricted to Markdown files. `@types/node` and `@alice`
+#: are not imports anyone meant, and treating them as such would report
+#: packages and people as missing files.
 IMPORT_RE = re.compile(r"(?<![\w`/@])@((?:\.{0,2}/)?[\w.-]+(?:/[\w.-]+)*\.md)\b", re.I)
 
 
@@ -213,8 +216,9 @@ def _with_imports(
 ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
     """The file plus everything it imports, and imports that point nowhere.
 
-    Claude Code follows `@path` imports up to five hops deep. A CLAUDE.md that
-    is nothing but `@AGENTS.md` has no rules of its own, so checking it alone
+    Claude Code and Gemini CLI follow `@path` imports up to five hops deep. A
+    CLAUDE.md that is nothing but `@AGENTS.md` has no rules of its own, so
+    checking it alone
     would find nothing and report the topics as undocumented — while the file
     the reader actually gets has all of them.
     """
