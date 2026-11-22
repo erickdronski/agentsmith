@@ -11,12 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Full history. actions/checkout fetches one commit by default, and
+          # agentsmith derives the commit convention it checks for from git
+          # log; with fewer than 10 commits that check silently has nothing
+          # to compare.
           fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      # Not `pip install agentsmith`: that name on PyPI belongs to an
-      # unrelated project. Install from the repository until this is published.
-      - run: pip install git+https://github.com/erickdronski/agentsmith
-      - name: Check AGENTS.md against the repository
-        run: agentsmith --check
+      # Inputs, all optional: path, file (e.g. CLAUDE.md), strict ("true"
+      # also fails on stale references and undocumented conventions),
+      # python-version.
+      - uses: erickdronski/agentsmith@v0

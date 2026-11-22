@@ -70,6 +70,38 @@ jobs:
       - run: agentsmith --version
       - run: agentsmith . --format json > /dev/null
 
+  action:
+    name: the GitHub Action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check this repository with the local action
+        uses: ./
+      # The action is only useful if a contradiction fails the job, so prove
+      # the exit code gets through. The contradicting sentence lives in env,
+      # not in the script, so this workflow does not read as running npm.
+      - name: Build a repository whose AGENTS.md contradicts its lockfile
+        env:
+          CONTRADICTION: "Run `npm install` before anything else."
+        run: |
+          mkdir -p "$RUNNER_TEMP/contradiction"
+          echo '{"name": "fixture"}' > "$RUNNER_TEMP/contradiction/package.json"
+          touch "$RUNNER_TEMP/contradiction/pnpm-lock.yaml"
+          printf '%s\n' "$CONTRADICTION" > "$RUNNER_TEMP/contradiction/AGENTS.md"
+      - name: Run the local action on it
+        id: contradiction
+        continue-on-error: true
+        uses: ./
+        with:
+          path: ${{ runner.temp }}/contradiction
+      - name: The contradiction failed the action
+        if: steps.contradiction.outcome != 'failure'
+        run: |
+          echo "The action passed a repository whose AGENTS.md contradicts it."
+          exit 1
+
   lint:
     name: lint (ruff)
     runs-on: ubuntu-latest
