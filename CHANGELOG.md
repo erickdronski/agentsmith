@@ -49,6 +49,11 @@ pre-commit hook — and the rules can be written for Gemini CLI.
   time: the `.github/copilot-instructions.md` written by the first run was
   counted in the Layout section. Agent instruction files are no longer
   sampled as evidence of the project's conventions.
+- `--out FILE --merge --dry-run` on a file with nothing to change said it
+  would replace the managed block, with line counts that differed by the two
+  marker lines. It now says "already up to date", as `--target` does, the
+  counts leave the markers out, and without `--dry-run` such a file is not
+  rewritten.
 - Each file is read up to its first 120,000 bytes. When that cut fell inside
   a multi-byte character, the whole file was treated as not UTF-8 text; now
   only the cut character is dropped.

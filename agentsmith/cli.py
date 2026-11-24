@@ -442,6 +442,13 @@ def _write_merged(repo: Repo, target: str, args, findings) -> int:
         sys.stdout.write(merged.rstrip("\n") + "\n")
         return 0
 
+    if merged == existing:
+        # As --target does: a file with nothing to change is not rewritten.
+        sys.stderr.write("%s: already up to date\n" % args.out)
+        if warning:
+            sys.stderr.write("warning: %s\n" % warning)
+        return 0
+
     problem = _write_out(args.out, target, merged)
     if problem:
         return _usage_error(problem)
