@@ -30,15 +30,15 @@ still need review: observable conventions cannot explain architectural intent.
 
 ## Try it
 
-Requirements: Python 3.9+ and Git for installation from source.
+Open the repository you want to check. Activate a Python 3.9+ virtual
+environment and install the tagged release with Git available on your PATH.
 
 ```bash
-pip install git+https://github.com/erickdronski/agentsmith
-agentsmith                    # print to stdout
-agentsmith --out AGENTS.md    # write the file
-agentsmith --explain          # include the evidence for every rule
-agentsmith --out AGENTS.md --merge   # keep your hand-written sections
-agentsmith --target agents,claude,cursor,copilot,gemini   # every agent's file, merged
+python -m pip install "git+https://github.com/erickdronski/agentsmith@v0.3.1"
+agentsmith --explain                  # inspect the evidence behind each rule
+agentsmith --target agents --dry-run  # preview the proposed AGENTS.md
+agentsmith --target agents            # create or update its managed section
+agentsmith --check                    # compare the instructions with the repository
 ```
 
 Installing from git is the supported path today — this is not on PyPI yet, and
@@ -169,11 +169,11 @@ workflow is in
 
 `@v0` follows the 0.x releases: each release moves the `v0` tag to its own
 commit ([CONTRIBUTING.md](CONTRIBUTING.md#releasing) lists the steps).
-`@v0.3.0` pins one release. Without the action, install from the repository and
+`@v0.3.1` pins one release. Without the action, install from the repository and
 run the check yourself:
 
 ```yaml
-- run: pip install git+https://github.com/erickdronski/agentsmith
+- run: python -m pip install "git+https://github.com/erickdronski/agentsmith@v0.3.1"
 - run: agentsmith --check
 ```
 
@@ -183,7 +183,7 @@ run the check yourself:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/erickdronski/agentsmith
-    rev: v0.3.0
+    rev: v0.3.1
     hooks:
       - id: agentsmith-check
         # args: [--file, CLAUDE.md]   or   args: [--strict]
@@ -210,6 +210,10 @@ after the literal path fails. A file that genuinely is not there anymore is
 still reported. Each of those is a test in
 [`tests/test_drift.py`](tests/test_drift.py), and so is the rule that a file
 this tool generates must pass this tool's own check.
+
+For npm scripts, the checker skips optional invocations (`--if-present`) and
+commands that select packages with `--workspace`, `--workspaces`, or
+`--prefix`. Their success does not require the script in the current manifest.
 
 `--check` reads what the agent actually reads. A `CLAUDE.md` that is just
 `@AGENTS.md`, or a `GEMINI.md` that is just `@./AGENTS.md`, is checked through
@@ -408,7 +412,7 @@ own tooling on top.
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -t .   # 271 tests
+python -m unittest discover -s tests -t .
 ```
 
 Detectors are tested against real repositories built on disk, including real git

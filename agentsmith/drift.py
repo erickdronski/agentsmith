@@ -89,7 +89,14 @@ BRACKET_TOKEN = re.compile(r"\[[^\[\]/]+\]")
 #: A whole segment standing for "some directories here".
 ELLIPSIS_SEGMENTS = frozenset({"**", "...", "…"})
 
-SCRIPT_RE = re.compile(r"\b(?:npm|pnpm|yarn|bun)\s+run\s+([\w:.-]+)")
+SCRIPT_RE = re.compile(r"\b(npm|pnpm|yarn|bun)[ \t]+run[ \t]+([\w:.-]+)")
+# npm interprets options after the name, up to the command end or its own
+# argument separator. Other runners may forward those options to the script.
+NPM_OPTIONS_END = re.compile(r"[`\r\n;&|]|[ \t]+--(?=\s|$)")
+NPM_OPTIONAL_OR_SCOPED = re.compile(
+    r"[ \t](?:(?:--if-present|--workspaces|-ws)(?:=true)?(?![=\w-])"
+    r"|(?:--workspace|--prefix|-w)(?=[=\s]|$))"
+)
 # CICommand.render() qualifies a whole command, including arguments and chains.
 SCOPED_COMMAND_RE = re.compile(r"`([^`\n]+)`[ \t]+\(in `([^`\n]+)`\)")
 
@@ -560,11 +567,25 @@ def _script_manifest(repo: Repo, directory: Optional[str]) -> Optional[str]:
         return None
 
 
+def _required_script_names(snippet: str) -> Iterator[str]:
+    """Yield literal script names that this command requires in its current package."""
+    for match in SCRIPT_RE.finditer(snippet):
+        manager, name = match.groups()
+        if name.startswith("-"):
+            continue
+        if manager == "npm":
+            end = NPM_OPTIONS_END.search(snippet, match.end())
+            stop = end.start() if end else len(snippet)
+            if NPM_OPTIONAL_OR_SCOPED.search(snippet, match.end(), stop):
+                continue
+        yield name
+
+
 def _stale_scripts(repo: Repo, text: str, source: str) -> List[Drift]:
     out: List[Drift] = []
     seen = set()
     for snippet, directory in _script_contexts(text):
-        names = SCRIPT_RE.findall(snippet)
+        names = list(_required_script_names(snippet))
         if not names:
             continue
         manifest = _script_manifest(repo, directory)

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1] — 2026-11-24
+
+- Fixed false CI failures on optional or workspace-selected npm scripts, including
+  `npm run build --workspaces --if-present`. Required scripts are still checked,
+  including when they pass options to the script after `--`.
+- The quick start installs the tagged release, previews its changes, and preserves
+  existing hand-written instructions on the first run.
+
 ## [0.3.0] — 2026-11-24
 
 The drift check runs where teams already gate changes — a GitHub Action and a
