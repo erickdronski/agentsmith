@@ -57,6 +57,9 @@ pre-commit hook — and the rules can be written for Gemini CLI.
 - Each file is read up to its first 120,000 bytes. When that cut fell inside
   a multi-byte character, the whole file was treated as not UTF-8 text; now
   only the cut character is dropped.
+- The README's `--check` sample was wrapped by hand and left out two lines the
+  command prints. It is now the command's output, verbatim, and a test fails
+  if they differ.
 
 ### Changed
 
