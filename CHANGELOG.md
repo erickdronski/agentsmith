@@ -68,6 +68,10 @@ pre-commit hook — and the rules can be written for Gemini CLI.
   release procedure in CONTRIBUTING.md moves a floating `v0` tag to each 0.x
   release, the tag `uses: erickdronski/agentsmith@v0` resolves to. Moving it
   does not start another release build.
+- The package metadata names its license with the SPDX expression `MIT`, and
+  building from source needs setuptools 77 or later. setuptools stops
+  accepting the table form it replaces after February 18, 2027, and the
+  action and the pre-commit hook both build from source.
 
 ## [0.2.2] — 2026-11-20
 
