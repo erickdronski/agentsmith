@@ -28,8 +28,15 @@ pre-commit hook — and the rules can be written for Gemini CLI.
   are now created, with or without `--merge`, and `--dry-run` names the one it
   would create. A directory, a path through an existing file, or an unwritable
   location exits 2 with one line saying what to fix.
-- `--check --file NAME` exited 0 when NAME could not be read, so a typo in a
-  CI configuration passed forever. It now exits 2.
+- `--check` exited 0 when the instruction file could not be read. A typo in
+  `--file` in a CI configuration passed forever, and so did an AGENTS.md saved
+  as UTF-16 (what Windows PowerShell 5.1's `>` writes) in the action and the
+  pre-commit hook. It now exits 2 and says why, whether the file was named
+  with `--file` or found, and so does an import that exists but cannot be
+  read, which was reported as a missing file.
+- Each file is read up to its first 120,000 bytes. When that cut fell inside
+  a multi-byte character, the whole file was treated as not UTF-8 text; now
+  only the cut character is dropped.
 
 ### Changed
 

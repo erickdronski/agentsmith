@@ -164,7 +164,7 @@ workflow is in
 | Input | Default | Effect |
 |---|---|---|
 | `path` | `.` | repository to check |
-| `file` | first of `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md` | instruction file to check (`--file`); a named file that cannot be read fails the step |
+| `file` | first of `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md` | instruction file to check (`--file`); the step fails if a named file does not exist, or if the file checked, or one it imports, cannot be read |
 | `strict` | `false` | `true` also fails on stale references and undocumented conventions |
 | `python-version` | `3.12` | Python that runs agentsmith, 3.9 or newer |
 
@@ -214,8 +214,10 @@ this tool generates must pass this tool's own check.
 
 `--check` reads what the agent actually reads. A `CLAUDE.md` that is just
 `@AGENTS.md`, or a `GEMINI.md` that is just `@./AGENTS.md`, is checked through
-the import (and an import of a missing file is reported), and
-`--file .cursor/rules/x.mdc` skips the frontmatter.
+the import (an import of a missing file is reported), and
+`--file .cursor/rules/x.mdc` skips the frontmatter. When the file, or a file it
+imports, exists but cannot be read as UTF-8 text, `--check` exits 2 rather than
+passing; Windows PowerShell 5.1's `>` writes UTF-16, for example.
 
 ## What it detects
 

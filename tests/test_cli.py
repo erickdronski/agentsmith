@@ -486,6 +486,40 @@ class TestCheckExitCodes(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertFalse(json.loads(out)["checked"])
 
+    def test_found_file_that_cannot_be_read_exits_two(self):
+        """Found without --file, an unreadable AGENTS.md exited 0 — so the
+        action and the pre-commit hook passed it. Windows PowerShell 5.1's
+        `>` writes UTF-16, which is how such a file usually arrives."""
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"name": "x"})
+            fixture.write("pnpm-lock.yaml", "")
+            with open(os.path.join(fixture.root, "AGENTS.md"), "wb") as handle:
+                handle.write("Run `npm install` first.\n".encode("utf-16"))
+            for extra in ([], ["--strict"]):
+                code, out, _ = run_cli(fixture.root, "--check", *extra)
+                self.assertEqual(code, 2, out)
+                self.assertIn("Could not read AGENTS.md: it is not UTF-8 text", out)
+            code, out, _ = run_cli(fixture.root, "--check", "--format", "json")
+            self.assertEqual(code, 2)
+            payload = json.loads(out)
+            self.assertEqual(
+                (payload["file"], payload["checked"]), ("AGENTS.md", False)
+            )
+
+    def test_import_that_cannot_be_read_exits_two(self):
+        """It was reported as an import of a file that does not exist, a
+        warning, so the check passed without reading the rules."""
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"name": "x"})
+            fixture.write("pnpm-lock.yaml", "")
+            with open(os.path.join(fixture.root, "AGENTS.md"), "wb") as handle:
+                handle.write("Run `npm install` first.\n".encode("utf-16"))
+            fixture.write("GEMINI.md", "# GEMINI.md\n\n@./AGENTS.md\n")
+            code, out, _ = run_cli(fixture.root, "--check", "--file", "GEMINI.md")
+            self.assertEqual(code, 2, out)
+            self.assertIn("Could not read AGENTS.md, which GEMINI.md imports", out)
+            self.assertNotIn("does not exist", out)
+
     def test_explicit_file_is_honored(self):
         with FixtureRepo() as fixture:
             fixture.write_json("package.json", {"name": "x"})
