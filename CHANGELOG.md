@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.0] — 2026-11-22
+## [0.3.0] — 2026-11-24
 
 The drift check runs where teams already gate changes — a GitHub Action and a
 pre-commit hook — and the rules can be written for Gemini CLI.
