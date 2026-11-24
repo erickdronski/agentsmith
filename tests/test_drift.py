@@ -89,6 +89,52 @@ class TestPackageManagerContradictions(unittest.TestCase):
 
 
 class TestStaleScripts(unittest.TestCase):
+    def test_optional_and_workspace_invocations_do_not_require_root_scripts(self):
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"scripts": {"test": "echo ok"}})
+            fixture.write_json(
+                "packages/web/package.json", {"scripts": {"build": "tsc"}}
+            )
+            fixture.write(
+                "AGENTS.md",
+                "\n".join(
+                    "`%s`" % command
+                    for command in (
+                        "npm run --if-present lint",
+                        "npm run lint --if-present",
+                        "npm run --workspace web build",
+                        "npm run build -w web",
+                        "npm run build --workspace=web",
+                        "npm run build --workspaces --if-present",
+                        "npm run build --prefix packages/web",
+                    )
+                ),
+            )
+            self.assertEqual(kinds(run_check(fixture), "stale"), [])
+
+    def test_script_arguments_and_adjacent_commands_do_not_make_a_script_optional(self):
+        with FixtureRepo() as fixture:
+            fixture.write_json("package.json", {"scripts": {"test": "echo ok"}})
+            fixture.write(
+                "AGENTS.md",
+                "`npm run missing-args -- --if-present`\n"
+                "`npm run missing-chain && npm run optional --if-present`\n"
+                "`npm run missing-inline` and `npm run test -w web`\n"
+                "`npm run missing-required --if-present=false`\n"
+                "`pnpm run missing-pnpm --if-present`",
+            )
+            errors = [item["message"] for item in kinds(run_check(fixture), "stale")]
+            names = {
+                "missing-args",
+                "missing-chain",
+                "missing-inline",
+                "missing-required",
+                "missing-pnpm",
+            }
+            self.assertEqual(len(errors), len(names), errors)
+            for name in names:
+                self.assertTrue(any("`%s`" % name in message for message in errors))
+
     def test_missing_script_is_an_error(self):
         with FixtureRepo() as fixture:
             fixture.write_json(
