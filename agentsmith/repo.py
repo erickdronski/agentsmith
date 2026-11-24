@@ -91,6 +91,23 @@ GENERATED_PATTERNS = (
     re.compile(r"\.d\.ts$"),
 )
 
+#: Instruction files for coding agents, at the paths `--check` looks for and
+#: `--target` writes. They describe the project rather than being part of it,
+#: and sampling them made one run depend on the last: `--target copilot`
+#: created `.github/copilot-instructions.md`, the next run listed `.github/`
+#: under Layout, and running the same command twice changed the rules.
+INSTRUCTION_FILES = frozenset(
+    {
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude/CLAUDE.md",
+        ".github/copilot-instructions.md",
+        ".cursorrules",
+        ".cursor/rules/agentsmith.mdc",
+        "GEMINI.md",
+    }
+)
+
 #: Read at most this much of any single file. Style is visible in the first
 #: few hundred lines; the tail is almost never worth the I/O.
 MAX_READ_BYTES = 120_000
@@ -167,9 +184,9 @@ class Repo:
     def files(self) -> List[str]:
         """Files worth sampling for conventions, as repo-relative POSIX paths.
 
-        A subset of :meth:`all_files`: generated files and tooling
-        dot-directories are dropped as well, because sampling them would
-        describe the tools rather than the project.
+        A subset of :meth:`all_files`: generated files, tooling
+        dot-directories and agent instruction files are dropped as well,
+        because sampling them would describe the tools rather than the project.
         """
         if self._files is None:
             self._files = [p for p in self.all_files() if _sampleable(p)][:MAX_FILES]
@@ -384,6 +401,8 @@ def _is_vendored(relative: str) -> bool:
 
 def _sampleable(relative: str) -> bool:
     """Should this file count as evidence of the project's own conventions?"""
+    if relative in INSTRUCTION_FILES:
+        return False
     directories = relative.split("/")[:-1]
     if not all(_walk_into(name) for name in directories):
         return False
