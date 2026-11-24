@@ -127,17 +127,16 @@ agentsmith --check
 ```
 Checked AGENTS.md against the repository.
 
-✗ AGENTS.md says to use `npm` (found 'npm install'), but this repository's
-  lockfile is pnpm-lock.yaml. An agent following this will produce a divergent
-  dependency tree.
+✗ AGENTS.md says to use `npm` (found 'npm install'), but this repository's lockfile is pnpm-lock.yaml. An agent following this will produce a divergent dependency tree.
     → Replace `npm` commands with `pnpm`.
-✗ AGENTS.md tells the reader to run `verify`, but package.json defines no such
-  script.
+✗ AGENTS.md tells the reader to run `verify`, but package.json defines no such script.
     → Available scripts: build, test
-· AGENTS.md does not mention which paths must not be hand-edited, which this
-  repository has a clear convention for.
+· AGENTS.md does not mention which paths must not be hand-edited, which this repository has a clear convention for.
+    → Run `agentsmith` to see the detected rule.
 
 2 contradiction(s), 0 stale reference(s), 1 undocumented convention(s).
+
+Contradictions are the ones that cause damage: an agent will follow them confidently into a wall.
 ```
 
 Exit code is 1 on contradictions, so it drops straight into CI.
@@ -409,7 +408,7 @@ own tooling on top.
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -t .   # 270 tests
+python -m unittest discover -s tests -t .   # 271 tests
 ```
 
 Detectors are tested against real repositories built on disk, including real git

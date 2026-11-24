@@ -629,5 +629,40 @@ class TestSelfAnalysis(unittest.TestCase):
         self.assertNotIn("package-manager", findings)
 
 
+class TestReadmeDriftSample(unittest.TestCase):
+    """The README's `--check` sample is the command's real output.
+
+    It is the first thing a reader judges the tool by, so it is rebuilt here
+    from the repository it describes and compared verbatim."""
+
+    def test_readme_sample_is_verbatim_output(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "README.md"), encoding="utf-8") as handle:
+            readme = handle.read()
+        section = readme[readme.index("## Drift detection") :]
+        start = section.index("\n```\nChecked AGENTS.md") + len("\n```\n")
+        sample = section[start : section.index("\n```\n", start)]
+
+        with FixtureRepo(git=True) as fixture:
+            fixture.write_json(
+                "package.json",
+                {"name": "x", "scripts": {"build": "tsc", "test": "vitest run"}},
+            )
+            fixture.write("pnpm-lock.yaml")
+            for i in range(1, 10):
+                fixture.write(
+                    "migrations/000%d_t.sql" % i, "create table t%d (id int);\n" % i
+                )
+            fixture.commit("init")
+            fixture.write(
+                "AGENTS.md",
+                "Run `npm install` first, then `npm run verify` before finishing.\n",
+            )
+            code, out, _ = run_cli(fixture.root, "--check")
+
+        self.assertEqual(code, 1)
+        self.assertEqual(out.rstrip("\n"), sample)
+
+
 if __name__ == "__main__":
     unittest.main()
