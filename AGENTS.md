@@ -61,18 +61,18 @@ Run `agentsmith --check` to find out when this file has drifted from reality.
 
 ## Git and history
 
-- Commit subjects are written in the imperative mood ("Add X", not "Added X"). Median subject length is 60 characters.
+- Commit subjects are written in the imperative mood ("Add X", not "Added X"). Median subject length is 58 characters.
 
 - These files change most often, so they are the ones most likely to conflict with concurrent work. Re-read them before editing rather than working from memory:
 
-  - `README.md` — changed in 13 of the last 28 commits
-  - `tests/test_cli.py` — changed in 7 of the last 28 commits
-  - `agentsmith/drift.py` — changed in 6 of the last 28 commits
-  - `agentsmith/cli.py` — changed in 6 of the last 28 commits
-  - `pyproject.toml` — changed in 6 of the last 28 commits
-  - `.github/workflows/ci.yml` — changed in 5 of the last 28 commits
-  - `CHANGELOG.md` — changed in 5 of the last 28 commits
-  - `tests/test_drift.py` — changed in 5 of the last 28 commits
+  - `README.md` — changed in 21 of the last 41 commits
+  - `CHANGELOG.md` — changed in 16 of the last 41 commits
+  - `tests/test_cli.py` — changed in 12 of the last 41 commits
+  - `agentsmith/cli.py` — changed in 10 of the last 41 commits
+  - `pyproject.toml` — changed in 8 of the last 41 commits
+  - `agentsmith/drift.py` — changed in 8 of the last 41 commits
+  - `tests/test_detectors.py` — changed in 7 of the last 41 commits
+  - `tests/test_drift.py` — changed in 6 of the last 41 commits
 
 ---
 
