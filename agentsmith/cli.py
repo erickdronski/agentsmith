@@ -177,6 +177,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     target = None
     if args.out and not args.check:
+        # A shell expands an unquoted ~, but a ~ quoted in a Makefile or a CI
+        # step reaches here as is; left alone it became a directory named ~.
+        args.out = os.path.expanduser(args.out)
+        if args.out.startswith("~"):
+            return _usage_error(
+                "cannot write --out %s: %s does not name a home directory here; "
+                "spell the path out, or write ./%s for a directory with that name"
+                % (args.out, args.out.replace("\\", "/").split("/")[0], args.out)
+            )
         target = (
             args.out if os.path.isabs(args.out) else os.path.join(os.getcwd(), args.out)
         )

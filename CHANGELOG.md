@@ -27,7 +27,10 @@ pre-commit hook — and the rules can be written for Gemini CLI.
   `--out` naming a directory with an IsADirectoryError. Missing directories
   are now created, with or without `--merge`, and `--dry-run` names the one it
   would create. A directory, a path through an existing file, or an unwritable
-  location exits 2 with one line saying what to fix.
+  location exits 2 with one line saying what to fix. A `~` the shell did not
+  expand, as in a quoted `--out '~/notes/AGENTS.md'`, means the home
+  directory, as it already did for the repository path, and a `~name` that
+  names no home directory exits 2.
 - `--check` exited 0 when the instruction file could not be read. A typo in
   `--file` in a CI configuration passed forever, and so did an AGENTS.md saved
   as UTF-16 (what Windows PowerShell 5.1's `>` writes) in the action and the

@@ -369,6 +369,34 @@ class TestOutPaths(unittest.TestCase):
                 self.assert_one_line_error(code, err, "is not writable")
         self.assertEqual(os.listdir(locked), [])
 
+    def test_a_quoted_tilde_means_the_home_directory(self):
+        """A ~ quoted in a Makefile or CI step is not expanded by a shell. It
+        used to create a directory named ~ here while reporting `wrote ~/...`."""
+        self.in_repo()
+        with FixtureRepo() as home:
+            environ = {"HOME": home.root, "USERPROFILE": home.root}
+            with mock.patch.dict(os.environ, environ):
+                expected = os.path.expanduser("~/probe/AGENTS.md")
+                code, _, err = run_cli(".", "--out", "~/probe/AGENTS.md")
+            self.assertEqual(code, 0, err)
+            self.assertTrue(
+                os.path.isfile(os.path.join(home.root, "probe", "AGENTS.md"))
+            )
+            self.assertIn("wrote %s" % expected, err)
+        self.assertFalse(os.path.exists(self.path("~")))
+
+    @unittest.skipIf(os.name == "nt", "Windows guesses ~user from USERPROFILE")
+    def test_a_tilde_that_names_no_home_directory_exits_two(self):
+        self.in_repo()
+        out = "~agentsmith-no-such-user/AGENTS.md"
+        for extra in ([], ["--merge"], ["--dry-run"]):
+            code, _, err = run_cli(".", "--out", out, *extra)
+            self.assert_one_line_error(code, err, "does not name a home directory")
+            self.assertIn("./" + out, err)
+        self.assertEqual(
+            [n for n in os.listdir(self.fixture.root) if n.startswith("~")], []
+        )
+
     def test_a_failed_write_is_an_error_not_a_traceback(self):
         """A read-only filesystem or a race gets past the up-front checks."""
         denied = PermissionError(13, "Permission denied")
