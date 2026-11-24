@@ -17,7 +17,7 @@ is an import, not a copy.
 from __future__ import annotations
 
 import os
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 from .drift import imports
 from .merge import MergeError, has_markers, merge, preview, split_managed
@@ -131,6 +131,10 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
     """
     plans: List[Plan] = []
     resolved_root = _resolved_path(root)
+    # Resolved path -> the target that writes it. `ln -s CLAUDE.md GEMINI.md`
+    # makes two targets one file, and planning both rewrote it on every run,
+    # alternating between the two imports. The first target in TARGETS wins.
+    owners: Dict[str, str] = {}
     for name, path in TARGETS:
         if name not in names:
             continue
@@ -155,6 +159,11 @@ def plan(root: str, names: Sequence[str], render: Renderer) -> List[Plan]:
             item.summary = "already links to AGENTS.md; left unchanged"
             plans.append(item)
             continue
+        if resolved in owners:
+            item.summary = "the same file as %s; left to that target" % owners[resolved]
+            plans.append(item)
+            continue
+        owners[resolved] = path
         if os.path.exists(full):
             item.existing = _read(full)
             if item.existing is None:

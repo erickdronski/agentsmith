@@ -280,6 +280,28 @@ class TestGeminiTarget(TargetCase):
         self.assertEqual(imports(self.read("AGENTS.md")), [])
         self.assertTrue(os.path.islink(self.path("GEMINI.md")))
 
+    def test_symlink_to_claude_md_is_written_once(self):
+        """`ln -s CLAUDE.md GEMINI.md` makes two targets one file. Both
+        were planned, so every run rewrote it, alternating between
+        `@AGENTS.md` and `@./AGENTS.md`."""
+        self.fixture.write("CLAUDE.md", HANDWRITTEN_CLAUDE)
+        try:
+            os.symlink("CLAUDE.md", self.path("GEMINI.md"))
+        except OSError as exc:
+            self.skipTest("symlinks unavailable: %s" % exc)
+        code, _, err = self.run_targets("agents,claude,gemini")
+        self.assertEqual(code, 0, err)
+        self.assertIn("GEMINI.md: the same file as CLAUDE.md", err)
+        first = self.read("CLAUDE.md")
+        self.assertEqual(imports(first), ["AGENTS.md"])
+        self.assertIn("Never run the migration scripts", first)
+        for _ in range(2):
+            code, _, err = self.run_targets("agents,claude,gemini")
+            self.assertEqual(code, 0, err)
+            self.assertEqual(self.read("CLAUDE.md"), first)
+            self.assertIn("CLAUDE.md: already up to date", err)
+        self.assertTrue(os.path.islink(self.path("GEMINI.md")))
+
     def test_symlink_outside_the_repository_writes_nothing(self):
         with FixtureRepo() as outside:
             outside.write("GEMINI.md", "Do not change this.\n")

@@ -37,6 +37,11 @@ pre-commit hook — and the rules can be written for Gemini CLI.
 - `--help`, the "No instruction file found" message, the action's `file`
   input and the README named three of the seven files `--check` looks for.
   They now name all seven, GEMINI.md included.
+- Two targets that are one file, such as a `GEMINI.md` symlinked to
+  `CLAUDE.md`, were both planned, so every `--target` run rewrote the file,
+  alternating between the two imports. It is now written once, by whichever
+  comes first of agents, claude, cursor, copilot and gemini, and the other
+  reports that it is the same file.
 - Each file is read up to its first 120,000 bytes. When that cut fell inside
   a multi-byte character, the whole file was treated as not UTF-8 text; now
   only the cut character is dropped.

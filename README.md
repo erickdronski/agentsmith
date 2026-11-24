@@ -352,7 +352,9 @@ generated content lives between the markers, and **everything outside them is
 never touched** — your existing `CLAUDE.md` keeps every line and gains the
 import. A `CLAUDE.md` or `GEMINI.md` that already imports the local
 `AGENTS.md`, or is a symlink to it, is left alone. An import of `../AGENTS.md`
-remains separate from the local file. All
+remains separate from the local file. Two targets that are the same file, such
+as a `GEMINI.md` symlinked to `CLAUDE.md`, are written once, by the target
+listed first in the table above. All
 targets are planned before any is written, so if one file has malformed
 markers the run refuses and **writes nothing at all**. Running it again
 changes nothing.
