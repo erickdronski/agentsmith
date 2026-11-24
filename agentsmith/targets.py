@@ -33,7 +33,7 @@ TARGETS = (
     ("claude", "CLAUDE.md"),
     ("cursor", ".cursor/rules/agentsmith.mdc"),
     # Repository-wide instructions, applied to every request in the repository:
-    # https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions
+    # https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions
     # (Path-specific `.github/instructions/*.instructions.md` files apply only
     # to files matching their `applyTo` glob, so they are not a target.)
     ("copilot", ".github/copilot-instructions.md"),
