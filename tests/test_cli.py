@@ -11,8 +11,9 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
-from agentsmith.cli import main
+from agentsmith.cli import build_parser, main
 from agentsmith.detectors import run_all
+from agentsmith.drift import AGENT_FILES
 from agentsmith.evidence import Confidence, Evidence, Finding
 from agentsmith.merge import BEGIN_MARKER
 from agentsmith.render import GENERATED_MARKER, render_json, render_markdown
@@ -519,6 +520,12 @@ class TestCheckExitCodes(unittest.TestCase):
             self.assertEqual(code, 2, out)
             self.assertIn("Could not read AGENTS.md, which GEMINI.md imports", out)
             self.assertNotIn("does not exist", out)
+
+    def test_help_names_every_file_check_looks_for(self):
+        # Wrapping can break a line after a hyphen; whitespace is irrelevant.
+        text = "".join(build_parser().format_help().split())
+        for name in AGENT_FILES:
+            self.assertIn(name, text)
 
     def test_explicit_file_is_honored(self):
         with FixtureRepo() as fixture:

@@ -147,7 +147,7 @@ def check(
         return _not_checked(
             None,
             "No instruction file found (looked for %s). Run without --check to "
-            "generate one." % ", ".join(AGENT_FILES[:3]),
+            "generate one." % ", ".join(AGENT_FILES),
         )
 
     text = repo.read(target)

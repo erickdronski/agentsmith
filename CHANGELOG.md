@@ -34,6 +34,9 @@ pre-commit hook — and the rules can be written for Gemini CLI.
   pre-commit hook. It now exits 2 and says why, whether the file was named
   with `--file` or found, and so does an import that exists but cannot be
   read, which was reported as a missing file.
+- `--help`, the "No instruction file found" message, the action's `file`
+  input and the README named three of the seven files `--check` looks for.
+  They now name all seven, GEMINI.md included.
 - Each file is read up to its first 120,000 bytes. When that cut fell inside
   a multi-byte character, the whole file was treated as not UTF-8 text; now
   only the cut character is dropped.

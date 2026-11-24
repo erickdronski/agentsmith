@@ -9,7 +9,7 @@ import os
 import unittest
 
 from agentsmith.detectors import run_all
-from agentsmith.drift import check, find_agent_file
+from agentsmith.drift import AGENT_FILES, check, find_agent_file
 
 from .fixtures import TS_SOURCE, FixtureRepo
 
@@ -41,6 +41,15 @@ class TestFileDiscovery(unittest.TestCase):
             result = run_check(fixture)
             self.assertFalse(result["checked"])
             self.assertIn("No instruction file", result["message"])
+
+    def test_nothing_to_check_names_every_file_it_looked_for(self):
+        """It named three of the seven, so a lone GEMINI.md that `--check`
+        did find looked like a file it would never read."""
+        with FixtureRepo() as fixture:
+            message = run_check(fixture)["message"]
+            for name in AGENT_FILES:
+                self.assertIn(name, message)
+            self.assertIsNone(run_check(fixture)["file"])
 
 
 class TestPackageManagerContradictions(unittest.TestCase):

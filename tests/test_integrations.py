@@ -11,6 +11,7 @@ import re
 import unittest
 
 from agentsmith.cli import build_parser
+from agentsmith.drift import AGENT_FILES
 from agentsmith.miniyaml import parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -69,6 +70,16 @@ class TestGitHubAction(unittest.TestCase):
         ]
         self.assertEqual(str(checkout[0]["with"]["fetch-depth"]), "0")
         self.assertIn("erickdronski/agentsmith@v0", [s.get("uses") for s in steps])
+
+    def test_file_input_names_every_file_check_looks_for(self):
+        """The default is whatever `--check` finds first, so the action and
+        the README's input table list all of `AGENT_FILES`, not three."""
+        description = self.action["inputs"]["file"]["description"]
+        row = [ln for ln in read("README.md").splitlines() if ln.startswith("| `file`")]
+        self.assertEqual(len(row), 1)
+        for name in AGENT_FILES:
+            self.assertIn(name, description)
+            self.assertIn("`%s`" % name, row[0])
 
 
 class TestReleaseTags(unittest.TestCase):
