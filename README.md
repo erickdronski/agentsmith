@@ -337,7 +337,7 @@ agentsmith --target agents,claude,cursor,copilot,gemini
 | `agents` (default file) | `AGENTS.md` | the generated rules |
 | `claude` | `CLAUDE.md` | an `@AGENTS.md` import, so Claude Code reads the same file instead of a copy. Without an AGENTS.md (existing or requested in the same run) the rules go in directly — an import of a missing file would be a broken instruction |
 | `cursor` | `.cursor/rules/agentsmith.mdc` | the rules, after `description:` / `alwaysApply: true` frontmatter |
-| `copilot` | `.github/copilot-instructions.md` | the rules, as [repository-wide instructions](https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions) |
+| `copilot` | `.github/copilot-instructions.md` | the rules, as [repository-wide instructions](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions) |
 | `gemini` | `GEMINI.md` | an `@./AGENTS.md` import: GEMINI.md is Gemini CLI's [default context file](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md), and `@./` is the [import form it documents](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/memport.md). Without an AGENTS.md the rules go in directly, as for `claude` |
 
 Windsurf has no target of its own. Its rules page,
