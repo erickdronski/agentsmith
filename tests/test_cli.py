@@ -397,6 +397,25 @@ class TestOutPaths(unittest.TestCase):
             [n for n in os.listdir(self.fixture.root) if n.startswith("~")], []
         )
 
+    def test_merge_dry_run_on_an_up_to_date_file_says_so(self):
+        """It said it would replace the managed block, with line counts that
+        differed by the two marker lines although nothing would change."""
+        target = self.path("AGENTS.md")
+        code, _, err = run_cli(self.fixture.root, "--out", target, "--merge")
+        self.assertEqual(code, 0, err)
+        with open(target, encoding="utf-8") as handle:
+            written = handle.read()
+        code, out, err = run_cli(
+            self.fixture.root, "--out", target, "--merge", "--dry-run"
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(err, "%s: already up to date\n" % target)
+        self.assertEqual(out, written)
+        code, _, err = run_cli(self.fixture.root, "--out", target, "--merge")
+        self.assertEqual((code, err), (0, "%s: already up to date\n" % target))
+        with open(target, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), written)
+
     def test_a_failed_write_is_an_error_not_a_traceback(self):
         """A read-only filesystem or a race gets past the up-front checks."""
         denied = PermissionError(13, "Permission denied")

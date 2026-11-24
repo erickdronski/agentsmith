@@ -137,7 +137,11 @@ def preview(existing: str, generated_body: str) -> str:
             "would append a managed block and preserve all %d existing "
             "non-empty line(s)" % preserved
         )
-    old_lines = len([ln for ln in managed.splitlines() if ln.strip()])
+    if merge(existing, generated_body) == existing:
+        return "already up to date"
+    # The generated body has no markers, so they are not counted on either side.
+    inner = managed[len(BEGIN_MARKER) : -len(END_MARKER)]
+    old_lines = len([ln for ln in inner.splitlines() if ln.strip()])
     new_lines = len([ln for ln in generated_body.splitlines() if ln.strip()])
     return (
         "would replace the managed block (%d lines -> %d) and preserve %d "

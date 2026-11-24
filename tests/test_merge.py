@@ -137,6 +137,17 @@ class TestPreview(unittest.TestCase):
         once = merge(HANDWRITTEN, "## Commands\n- a")
         self.assertIn("replace", preview(once, "## Commands\n- b"))
 
+    def test_counts_the_block_without_its_markers(self):
+        """The generated body has no markers, so counting them in the old
+        block made an unchanged length read as two lines shorter."""
+        once = merge(HANDWRITTEN, "## Commands\n- a")
+        self.assertIn("(2 lines -> 2)", preview(once, "## Commands\n- b"))
+        self.assertIn("(2 lines -> 3)", preview(once, "## Commands\n- b\n- c"))
+
+    def test_an_unchanged_block_is_up_to_date(self):
+        once = merge(HANDWRITTEN, "## Commands\n- a")
+        self.assertEqual(preview(once, "## Commands\n- a"), "already up to date")
+
     def test_reports_a_malformed_file_without_raising(self):
         self.assertIn("cannot merge", preview(BEGIN_MARKER, "## Commands"))
 
