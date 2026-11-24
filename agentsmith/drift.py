@@ -144,27 +144,30 @@ def check(
     """Compare an instruction file, and the files it imports, against reality."""
     target = agent_file or find_agent_file(repo)
     if target is None:
-        return {
-            "file": None,
-            "drift": [],
-            "checked": False,
-            "message": (
-                "No instruction file found (looked for %s). Run without "
-                "--check to generate one." % ", ".join(AGENT_FILES[:3])
-            ),
-        }
+        return _not_checked(
+            None,
+            "No instruction file found (looked for %s). Run without --check to "
+            "generate one." % ", ".join(AGENT_FILES[:3]),
+        )
 
     text = repo.read(target)
     if text is None:
-        return {
-            "file": target,
-            "drift": [],
-            "checked": False,
-            "message": "Could not read %s" % target,
-        }
+        return _not_checked(
+            target, "Could not read %s: %s." % (target, _unreadable(repo, target))
+        )
+
+    documents, missing, unreadable = _with_imports(repo, target, text)
+    if unreadable:
+        # The rules in that file are what the agent reads, so a check that
+        # skipped them would pass without having looked.
+        importer, imported = unreadable[0]
+        return _not_checked(
+            target,
+            "Could not read %s, which %s imports: %s."
+            % (imported, importer, _unreadable(repo, imported)),
+        )
 
     drift: List[Drift] = []
-    documents, missing = _with_imports(repo, target, text)
     for path, raw in missing:
         drift.append(
             Drift(
@@ -211,10 +214,34 @@ def imports(text: str) -> List[str]:
     return IMPORT_RE.findall(body)
 
 
+def _not_checked(target: Optional[str], message: str) -> Dict[str, object]:
+    """The result when nothing was checked. ``file`` is set when a file was
+    there to check but could not be read, which the CLI treats as an error."""
+    return {"file": target, "drift": [], "checked": False, "message": message}
+
+
+def _unreadable(repo: Repo, relative: str) -> str:
+    """Why :meth:`Repo.read` returned nothing for this path."""
+    full = repo.path(relative)
+    if not os.path.lexists(full):
+        return "it does not exist"
+    if os.path.isdir(full):
+        return "it is a directory"
+    try:
+        with open(full, "rb"):
+            pass
+    except OSError as exc:
+        return "it could not be opened (%s)" % (exc.strerror or exc)
+    # Windows PowerShell 5.1 writes UTF-16 with `>`, which is how an
+    # instruction file most often ends up in another encoding.
+    return "it is not UTF-8 text"
+
+
 def _with_imports(
     repo: Repo, target: str, text: str
-) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
-    """The file plus everything it imports, and imports that point nowhere.
+) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
+    """The file plus everything it imports, imports that point nowhere, and
+    imports of files that exist but cannot be read, as (importer, path).
 
     Claude Code and Gemini CLI follow `@path` imports up to five hops deep. A
     CLAUDE.md that is nothing but `@AGENTS.md` has no rules of its own, so
@@ -224,6 +251,7 @@ def _with_imports(
     """
     documents = [(target, _strip_frontmatter(text))]
     missing: List[Tuple[str, str]] = []
+    unreadable: List[Tuple[str, str]] = []
     seen = {os.path.normpath(target).replace(os.sep, "/")}
     queue = [(target, text, 0)]
     while queue:
@@ -240,11 +268,14 @@ def _with_imports(
             seen.add(resolved)
             imported = repo.read(resolved)
             if imported is None:
-                missing.append((path, raw))
+                if os.path.isfile(repo.path(resolved)):
+                    unreadable.append((path, resolved))
+                else:
+                    missing.append((path, raw))
                 continue
             documents.append((resolved, _strip_frontmatter(imported)))
             queue.append((resolved, imported, depth + 1))
-    return documents, missing
+    return documents, missing, unreadable
 
 
 def _strip_frontmatter(text: str) -> str:

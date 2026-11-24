@@ -19,7 +19,7 @@ from agentsmith.detectors import (
     verification,
 )
 from agentsmith.evidence import Confidence, dominant
-from agentsmith.repo import Repo
+from agentsmith.repo import MAX_READ_BYTES, Repo
 
 from .fixtures import PY_SOURCE, TS_SOURCE, TS_SOURCE_NO_SEMI, FixtureRepo, keys
 
@@ -825,6 +825,19 @@ class TestFileListing(unittest.TestCase):
             repo = fixture.repo()
             self.assertIn(".cursor/install.sh", repo.all_files())
             self.assertNotIn(".cursor/install.sh", repo.files())
+
+    def test_a_read_cut_inside_a_character_keeps_the_text(self):
+        """Reads stop at MAX_READ_BYTES. A longer file cut partway through a
+        multi-byte character used to read as not UTF-8 at all."""
+        with FixtureRepo() as fixture:
+            head = "a" * (MAX_READ_BYTES - 1)
+            fixture.write("big.md", head + "\u00e9" + "tail")
+            fixture.write("bad.md", "ok\n")
+            with open(os.path.join(fixture.root, "bad.md"), "ab") as handle:
+                handle.write(b"\xff\n")
+            repo = fixture.repo()
+            self.assertEqual(repo.read("big.md"), head)
+            self.assertIsNone(repo.read("bad.md"))
 
 
 class TestHotPathAccuracy(unittest.TestCase):

@@ -21,6 +21,7 @@ Two design decisions worth knowing:
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import re
@@ -127,8 +128,14 @@ class Repo:
         text: Optional[str] = None
         try:
             with open(full, "rb") as handle:
-                raw = handle.read(MAX_READ_BYTES)
-            text = raw.decode("utf-8")
+                raw = handle.read(MAX_READ_BYTES + 1)
+            # The cap can cut a longer file partway through a multi-byte
+            # character. What was read is still UTF-8 text, so only that
+            # character is dropped, not the whole file.
+            decoder = codecs.getincrementaldecoder("utf-8")()
+            text = decoder.decode(
+                raw[:MAX_READ_BYTES], final=len(raw) <= MAX_READ_BYTES
+            )
         except (OSError, UnicodeDecodeError):
             text = None
         self._text_cache[relative] = text

@@ -25,7 +25,8 @@ inputs:
     description: >-
       Instruction file to check, relative to `path` (passed as --file).
       Defaults to the first of AGENTS.md, CLAUDE.md and .claude/CLAUDE.md
-      that exists. A named file that cannot be read fails the step.
+      that exists. The step fails if a named file does not exist, or if the
+      file checked, or one it imports, cannot be read.
     required: false
     default: ""
   strict:

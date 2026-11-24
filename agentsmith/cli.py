@@ -497,10 +497,11 @@ def _run_check(repo: Repo, findings, args) -> int:
         sys.stdout.write(_format_check(result) + "\n")
 
     if not result.get("checked"):
-        # No instruction file is not drift. A file named with --file that
-        # cannot be read is a mistake in the invocation, and passing it would
-        # turn a typo in a CI config into a check that is green forever.
-        return 2 if args.file else 0
+        # No instruction file is not drift. A file that is there to check but
+        # cannot be read — a typo in --file, an AGENTS.md saved as UTF-16, an
+        # import that will not decode — is an error: passing it would turn
+        # the check into one that is green forever.
+        return 2 if result.get("file") else 0
 
     failing = result["errors"]
     if args.strict:
