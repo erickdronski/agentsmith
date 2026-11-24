@@ -13,7 +13,7 @@ from agentsmith.drift import imports
 from agentsmith.merge import BEGIN_MARKER, END_MARKER
 from agentsmith.targets import parse_targets
 
-from .fixtures import FixtureRepo
+from .fixtures import TS_SOURCE, FixtureRepo
 from .test_cli import run_cli
 
 HANDWRITTEN_CLAUDE = """# CLAUDE.md
@@ -373,6 +373,17 @@ class TestAllTargets(TargetCase):
         for path, text in first.items():
             self.assertEqual(self.read(path), text, path)
         self.assertEqual(err.count("already up to date"), len(ALL_PATHS))
+
+    def test_second_run_changes_nothing_when_targets_add_a_directory(self):
+        """The first run creates `.github/` for Copilot. Counted as part of
+        the layout, it changed three files on the second run."""
+        self.fixture.write_many(["src/m%d.ts" % i for i in range(12)], TS_SOURCE)
+        self.run_targets(ALL_TARGETS)
+        first = {p: self.read(p) for p in ALL_PATHS}
+        _code, _out, err = self.run_targets(ALL_TARGETS)
+        for path, text in first.items():
+            self.assertEqual(self.read(path), text, path)
+        self.assertEqual(err.count("already up to date"), len(ALL_PATHS), err)
 
     def test_output_has_no_double_blank_lines(self):
         self.fixture.write("CLAUDE.md", HANDWRITTEN_CLAUDE)

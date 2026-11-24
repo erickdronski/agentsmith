@@ -18,8 +18,10 @@ from agentsmith.detectors import (
     testing,
     verification,
 )
+from agentsmith.drift import AGENT_FILES
 from agentsmith.evidence import Confidence, dominant
-from agentsmith.repo import MAX_READ_BYTES, Repo
+from agentsmith.repo import INSTRUCTION_FILES, MAX_READ_BYTES, Repo
+from agentsmith.targets import TARGETS
 
 from .fixtures import PY_SOURCE, TS_SOURCE, TS_SOURCE_NO_SEMI, FixtureRepo, keys
 
@@ -825,6 +827,26 @@ class TestFileListing(unittest.TestCase):
             repo = fixture.repo()
             self.assertIn(".cursor/install.sh", repo.all_files())
             self.assertNotIn(".cursor/install.sh", repo.files())
+
+    def test_instruction_files_are_findable_but_not_sampled(self):
+        """`--target copilot` creates `.github/copilot-instructions.md`.
+        Sampled, it put `.github/` into the next run's layout, so running the
+        same `--target` command twice changed the rules."""
+        with FixtureRepo() as fixture:
+            fixture.write_many(["src/a.ts", "lib/b.ts"], TS_SOURCE)
+            fixture.write(".github/copilot-instructions.md", "# Copilot\n")
+            fixture.write("AGENTS.md", "# Rules\n")
+            repo = fixture.repo()
+            for path in (".github/copilot-instructions.md", "AGENTS.md"):
+                self.assertIn(path, repo.all_files())
+                self.assertNotIn(path, repo.files())
+            top = keys(layout.detect(repo))["top-level-layout"]
+            self.assertNotIn(".github", top.rule)
+
+    def test_instruction_files_are_the_ones_check_and_target_use(self):
+        self.assertEqual(INSTRUCTION_FILES, frozenset(AGENT_FILES))
+        for _name, path in TARGETS:
+            self.assertIn(path, INSTRUCTION_FILES)
 
     def test_a_read_cut_inside_a_character_keeps_the_text(self):
         """Reads stop at MAX_READ_BYTES. A longer file cut partway through a

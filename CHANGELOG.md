@@ -42,6 +42,10 @@ pre-commit hook — and the rules can be written for Gemini CLI.
   alternating between the two imports. It is now written once, by whichever
   comes first of agents, claude, cursor, copilot and gemini, and the other
   reports that it is the same file.
+- Running the same `--target` command twice could change files the second
+  time: the `.github/copilot-instructions.md` written by the first run was
+  counted in the Layout section. Agent instruction files are no longer
+  sampled as evidence of the project's conventions.
 - Each file is read up to its first 120,000 bytes. When that cut fell inside
   a multi-byte character, the whole file was treated as not UTF-8 text; now
   only the cut character is dropped.
