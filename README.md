@@ -168,8 +168,10 @@ workflow is in
 | `strict` | `false` | `true` also fails on stale references and undocumented conventions |
 | `python-version` | `3.12` | Python that runs agentsmith, 3.9 or newer |
 
-`@v0` follows the 0.x releases; `@v0.3.0` pins one. Without the action, install
-from the repository and run the check yourself:
+`@v0` follows the 0.x releases: each release moves the `v0` tag to its own
+commit ([CONTRIBUTING.md](CONTRIBUTING.md#releasing) lists the steps).
+`@v0.3.0` pins one release. Without the action, install from the repository and
+run the check yourself:
 
 ```yaml
 - run: pip install git+https://github.com/erickdronski/agentsmith

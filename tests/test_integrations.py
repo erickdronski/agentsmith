@@ -5,7 +5,9 @@ pin the properties that would otherwise only fail in someone else's CI, and
 parse the files with the project's own YAML reader rather than a dependency.
 """
 
+import fnmatch
 import os
+import re
 import unittest
 
 from agentsmith.cli import build_parser
@@ -14,9 +16,13 @@ from agentsmith.miniyaml import parse
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def load(relative):
+def read(relative):
     with open(os.path.join(ROOT, relative), encoding="utf-8") as handle:
-        return parse(handle.read())
+        return handle.read()
+
+
+def load(relative):
+    return parse(read(relative))
 
 
 class TestGitHubAction(unittest.TestCase):
@@ -63,6 +69,52 @@ class TestGitHubAction(unittest.TestCase):
         ]
         self.assertEqual(str(checkout[0]["with"]["fetch-depth"]), "0")
         self.assertIn("erickdronski/agentsmith@v0", [s.get("uses") for s in steps])
+
+
+class TestReleaseTags(unittest.TestCase):
+    """`uses: erickdronski/agentsmith@v0` fails in every workflow until a
+    `v0` tag exists, so each ref the documentation names must be one the
+    release procedure creates."""
+
+    DOCUMENTS = (
+        "README.md",
+        "CHANGELOG.md",
+        "action.yml",
+        ".github/workflows/agentsmith.yml",
+        ".github/workflows/ci.yml",
+    )
+
+    def setUp(self):
+        self.patterns = load(".github/workflows/release.yml")["on"]["push"]["tags"]
+        self.procedures = {
+            path: read(path)
+            for path in (".github/workflows/release.yml", "CONTRIBUTING.md")
+        }
+
+    def starts_a_release(self, tag):
+        # Tags here have no `/`, so fnmatch's `*` matches as GitHub's does.
+        return any(fnmatch.fnmatchcase(tag, pattern) for pattern in self.patterns)
+
+    def test_every_documented_ref_is_created_by_a_release(self):
+        refs = set()
+        for path in self.DOCUMENTS:
+            found = re.findall(r"erickdronski/agentsmith@([\w.-]+)", read(path))
+            refs.update(ref.rstrip(".") for ref in found)
+        self.assertIn("v0", refs)
+        for ref in sorted(refs):
+            if re.fullmatch(r"v\d+\.\d+\.\d+", ref):
+                continue  # the version tag each release pushes
+            for path, procedure in self.procedures.items():
+                self.assertIn("git tag -f %s '" % ref, procedure, path)
+                self.assertIn("git push -f origin %s\n" % ref, procedure, path)
+
+    def test_moving_the_major_tag_does_not_start_a_release(self):
+        """Pushing `v0` again on every release must not build, and later
+        upload to PyPI, the same version a second time."""
+        for tag in ("v0.3.0", "v1.0.0", "v0.10.2"):
+            self.assertTrue(self.starts_a_release(tag), tag)
+        for tag in ("v0", "v1"):
+            self.assertFalse(self.starts_a_release(tag), tag)
 
 
 class TestPreCommitHook(unittest.TestCase):

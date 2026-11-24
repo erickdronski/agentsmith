@@ -34,6 +34,10 @@ pre-commit hook — and the rules can be written for Gemini CLI.
 ### Changed
 
 - The sample workflow, `.github/workflows/agentsmith.yml`, uses the action.
+- The release workflow starts only for full version tags (`v*.*.*`), and the
+  release procedure in CONTRIBUTING.md moves a floating `v0` tag to each 0.x
+  release, the tag `uses: erickdronski/agentsmith@v0` resolves to. Moving it
+  does not start another release build.
 
 ## [0.2.2] — 2026-11-20
 
