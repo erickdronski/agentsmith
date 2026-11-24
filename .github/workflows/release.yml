@@ -1,6 +1,17 @@
-# Cut a release from a version tag.
+# Cut a release from a version tag. CONTRIBUTING.md has the whole procedure.
 #
-#   git tag v0.2.0 && git push --tags
+#   git tag -a v0.3.0 -m "agentsmith 0.3.0"
+#   git push origin v0.3.0
+#
+# Then move the floating major tag to the same commit. A workflow step with
+# `uses: erickdronski/agentsmith@v0` runs whatever `v0` points at, so this is
+# the step that makes `@v0` follow the 0.x releases:
+#
+#   git tag -f v0 'v0.3.0^{}'
+#   git push -f origin v0
+#
+# Only full version tags (v*.*.*) start this workflow, so creating or moving
+# `v0` does not start another build, or another upload to PyPI.
 #
 # The build job always runs: it re-runs the test suite, builds the sdist and
 # wheel, and checks them with twine. That is the part that must never be
@@ -9,9 +20,9 @@
 # The publish job is deliberately conditional. Publishing needs a PyPI Trusted
 # Publisher configured for this repo (https://pypi.org/manage/account/publishing/),
 # which is a one-time browser step. Until that exists, a tag should still
-# produce a green build and a GitHub Release rather than a red X for a step
-# that was never going to work — a permanently failing workflow teaches people
-# to ignore the badge.
+# produce a green build rather than a red X for a step that was never going to
+# work — a permanently failing workflow teaches people to ignore the badge.
+# The GitHub Release itself is written by hand from the tag.
 #
 # To turn publishing on: configure the Trusted Publisher, then create a
 # repository variable PUBLISH_TO_PYPI=true (Settings → Secrets and variables →
@@ -20,7 +31,7 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:

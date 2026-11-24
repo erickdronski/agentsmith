@@ -65,3 +65,33 @@ asserting the claim is *not* made.
 
 Explain *why* in comments, not *what*. The code says what it does; the comment
 should say what would go wrong without it.
+
+## Releasing
+
+The maintainer cuts releases. For version `X.Y.Z`:
+
+1. Set the version in `pyproject.toml` and `agentsmith/__init__.py`, give the
+   CHANGELOG entry its `[X.Y.Z]` heading and date, and update `rev:` in the
+   README's pre-commit example. Merge that to `main`.
+2. Tag the release commit on `main` and push the tag. That starts
+   `.github/workflows/release.yml`, which tests, builds and checks the
+   distributions:
+
+   ```bash
+   git tag -a vX.Y.Z -m "agentsmith X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+3. Move the floating major tag to the same commit. A workflow step with
+   `uses: erickdronski/agentsmith@v0` runs whatever `v0` points at, and the
+   README says `@v0` follows the 0.x releases, so this step is part of every
+   release:
+
+   ```bash
+   git tag -f v0 'vX.Y.Z^{}'
+   git push -f origin v0
+   ```
+
+   The release workflow only starts for full version tags (`v*.*.*`), so
+   this does not build or publish anything again.
+4. Write the GitHub Release for `vX.Y.Z` by hand; no workflow creates it.
