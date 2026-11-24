@@ -24,9 +24,11 @@ inputs:
   file:
     description: >-
       Instruction file to check, relative to `path` (passed as --file).
-      Defaults to the first of AGENTS.md, CLAUDE.md and .claude/CLAUDE.md
-      that exists. The step fails if a named file does not exist, or if the
-      file checked, or one it imports, cannot be read.
+      Defaults to the first that exists of AGENTS.md, CLAUDE.md,
+      .claude/CLAUDE.md, .github/copilot-instructions.md, .cursorrules,
+      .cursor/rules/agentsmith.mdc and GEMINI.md. The step fails if a named
+      file does not exist, or if the file checked, or one it imports, cannot
+      be read.
     required: false
     default: ""
   strict:

@@ -164,7 +164,7 @@ workflow is in
 | Input | Default | Effect |
 |---|---|---|
 | `path` | `.` | repository to check |
-| `file` | first of `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md` | instruction file to check (`--file`); the step fails if a named file does not exist, or if the file checked, or one it imports, cannot be read |
+| `file` | the first that exists of `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`, `.cursorrules`, `.cursor/rules/agentsmith.mdc`, `GEMINI.md` | instruction file to check (`--file`); the step fails if a named file does not exist, or if the file checked, or one it imports, cannot be read |
 | `strict` | `false` | `true` also fails on stale references and undocumented conventions |
 | `python-version` | `3.12` | Python that runs agentsmith, 3.9 or newer |
 

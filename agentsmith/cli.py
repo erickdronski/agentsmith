@@ -117,8 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--file",
         help=(
             "instruction file for --check, e.g. .cursor/rules/x.mdc (default: "
-            "first of %s that exists). @imports are followed"
-            % ", ".join(AGENT_FILES[:3])
+            "the first of %s that exists). @imports are followed"
+            % ", ".join(AGENT_FILES)
         ),
     )
     parser.add_argument(
